@@ -1,0 +1,9 @@
+.env
+settings.json
+venv/
+build/
+dist/
+cache/posters/
+database/catalog.db
+__pycache__/
+*.py[cod]
