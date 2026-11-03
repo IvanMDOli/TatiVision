@@ -19,6 +19,8 @@ la caché de pósteres que ya existían allí.
 
 Usá el ícono de tuerca en la parte inferior izquierda para elegir el
 reproductor de Windows, configurar la clave API de TMDb o borrar el catálogo.
+En **Apariencia** podés alternar entre el tema oscuro y uno claro; el cambio se
+aplica inmediatamente y se guarda al presionar **Guardar**.
 El logo de TMDB junto a Ajustes abre el sitio oficial. TatiVision usa TMDB y
 sus API, pero no está respaldado, certificado ni aprobado por TMDB.
 La sección **Biblioteca** permite crear varias bibliotecas con carpetas
@@ -36,6 +38,22 @@ Las actualizaciones de metadatos usan automáticamente la primera coincidencia
 de TMDb. Si una película se identificó mal, abrí su ficha y usá el botón de
 lápiz para consultar de nuevo TMDb y seleccionar la coincidencia correcta
 solo para esa película.
+
+Las series también permiten marcar capítulos individualmente o una temporada
+completa como vista; la ficha muestra el progreso total y la serie pasa al
+filtro de vistas cuando todos sus capítulos están marcados. Los botones de
+favoritos y vistos están disponibles en las tarjetas y en la ficha. Desde la
+ficha podés volver a consultar TMDb y elegir una coincidencia. El reparto
+principal aparece debajo de la sinopsis; al pasar el cursor sobre un nombre
+se muestra su personaje. En bibliotecas ya catalogadas, ejecutá **Carga
+forzada** (o **Carga forzada de series**) para volver a consultar TMDb y
+completar el reparto de los registros existentes.
+
+En los catálogos de películas y series, el buscador encuentra títulos y
+directores/creadores. La lista de ordenamiento permite ordenar por director,
+año o duración en ambos sentidos; al ordenar por director, los resultados se
+agrupan en filas por director. En el resto de los casos, ambos catálogos se
+agrupan por género. Los registros sin el dato elegido quedan al final.
 
 El archivo `.env` puede usarse en desarrollo como configuración inicial, pero
 no se incorpora al portable. Mantenelo privado, ya que puede contener la clave

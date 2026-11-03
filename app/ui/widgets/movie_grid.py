@@ -1,48 +1,31 @@
-from PySide6.QtWidgets import (
-    QLabel,
-    QWidget,
-    QScrollArea,
-    QGridLayout,
-    QVBoxLayout,
-)
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
-from app.ui.widgets.movie_card import (
-    MovieCard
+from app.ui.widgets.movie_row import (
+    MovieRow,
+    catalog_separator,
+    group_catalog_items,
 )
-from app.ui.widgets.responsive_grid import layout_fixed_cards
 
 
 class MovieGrid(QWidget):
-
     favoriteChanged = Signal(int, bool)
     watchedChanged = Signal(int, bool)
     renderFinished = Signal()
 
     def __init__(self):
-
         super().__init__()
-
-        layout = QVBoxLayout()
-
-        self.setLayout(layout)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         self.scroll_area = QScrollArea()
-
-        self.scroll_area.setWidgetResizable(
-            True
-        )
-        self.scroll_area.setFrameShape(
-            QScrollArea.NoFrame
-        )
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setStyleSheet(
             "QScrollArea { background-color: #101417; }"
             "QScrollArea > QWidget > QWidget { background-color: #101417; }"
         )
-        self.scroll_area.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarAlwaysOff
-        )
-
         self.grid_container = QWidget()
         self.grid_container.setObjectName("catalogContent")
         self.grid_container.setStyleSheet(
@@ -50,7 +33,7 @@ class MovieGrid(QWidget):
         )
         content_layout = QVBoxLayout(self.grid_container)
         content_layout.setContentsMargins(18, 14, 18, 20)
-        content_layout.setSpacing(0)
+        content_layout.setSpacing(8)
 
         self.context_label = QLabel()
         self.context_label.setObjectName("filteredContext")
@@ -60,159 +43,114 @@ class MovieGrid(QWidget):
         )
         self.context_label.hide()
         content_layout.addWidget(self.context_label)
+        self.rows_layout = QVBoxLayout()
+        self.rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.rows_layout.setSpacing(8)
+        content_layout.addLayout(self.rows_layout)
+        self.scroll_area.setWidget(self.grid_container)
+        layout.addWidget(self.scroll_area)
 
-        self.grid_content = QWidget()
-        self.grid_content.setStyleSheet(
-            "QWidget { background: transparent; }"
-        )
-
-        self.grid_layout = QGridLayout(self.grid_content)
-        self.grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.grid_layout.setHorizontalSpacing(16)
-        self.grid_layout.setVerticalSpacing(16)
-        self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
-        content_layout.addWidget(self.grid_content, 1)
-
-        self.scroll_area.setWidget(
-            self.grid_container
-        )
-
-        layout.addWidget(
-            self.scroll_area
-        )
-
+        self.rows = []
         self.cards = []
-        self._cards_by_id = {}
-        self._card_signatures = {}
-        self._column_count = 0
-        self._pending_movies = []
+        self._items = []
         self._render_click_handler = None
-        self._render_timer = QTimer(self)
-        self._render_timer.setSingleShot(True)
-        self._render_timer.timeout.connect(self._render_next_batch)
+        self._sort_order = "title_asc"
+        self._pending_rows = 0
 
-    def render_movies(self, movies, click_handler):
+    def render_movies(
+        self,
+        movies,
+        click_handler,
+        sort_order="title_asc",
+        selected_genre=None,
+    ):
         self.cancel_render()
-        self.grid_container.hide()
-        while self.grid_layout.count():
-            self.grid_layout.takeAt(0)
-
-        for card in self._cards_by_id.values():
-            card.hide()
-
-        self.cards = []
-        self._pending_movies = list(movies)
+        self._clear_rows()
+        self._items = list(movies)
         self._render_click_handler = click_handler
-        self._column_count = 0
-        self._render_next_batch()
+        self._sort_order = sort_order
+        self._selected_genre = selected_genre
+        self.cards.clear()
+        grouped_items = group_catalog_items(
+            movies,
+            sort_order,
+            selected_genre,
+        )
+        for index, (title, items) in enumerate(grouped_items):
+            if index:
+                self.rows_layout.addWidget(catalog_separator())
+            row = MovieRow(title, items, click_handler)
+            self._connect_row(row)
+            row.renderFinished.connect(self._row_rendered)
+            self.rows_layout.addWidget(row)
+            self.rows.append(row)
+        self._pending_rows = len(self.rows)
+        if not self.rows:
+            self.renderFinished.emit()
+        for row in self.rows:
+            row.start_render()
+        self.rows_layout.addStretch()
 
     def cancel_render(self):
-        self._render_timer.stop()
-        self._pending_movies = []
+        for row in self.rows:
+            row.cancel_render()
 
     def set_context(self, text):
         self.context_label.setText(text)
         self.context_label.setVisible(bool(text))
 
-    def _render_next_batch(self):
-        batch_size = 8
-        batch_end = min(len(self._pending_movies), batch_size)
-        batch = self._pending_movies[:batch_end]
-        del self._pending_movies[:batch_end]
-
-        for movie in batch:
-            signature = (
-                movie.title,
-                movie.year,
-                movie.director,
-                movie.poster_path,
-            )
-            card = self._cards_by_id.get(movie.id)
-            if card is not None and self._card_signatures[movie.id] != signature:
-                card.deleteLater()
-                del self._cards_by_id[movie.id]
-                del self._card_signatures[movie.id]
-                card = None
-
-            if card is None:
-                card = MovieCard(movie)
-                card.clicked.connect(self._render_click_handler)
-                card.favoriteChanged.connect(self.favoriteChanged.emit)
-                card.watchedChanged.connect(self.watchedChanged.emit)
-                self._cards_by_id[movie.id] = card
-                self._card_signatures[movie.id] = signature
-            else:
-                card.update_favorite(movie.favorite)
-                card.update_watched(movie.watched)
-
-            self.cards.append(card)
-
-        self._layout_cards()
-        self.grid_layout.invalidate()
-        self.grid_layout.activate()
-
-        if self._pending_movies:
-            self._render_timer.start(0)
-        else:
-            self.grid_container.show()
-            self.grid_layout.invalidate()
-            self.grid_layout.activate()
-            for card in self.cards:
-                card.show()
-            self.grid_container.updateGeometry()
-            self.renderFinished.emit()
-
-    def retain_movies(self, movies):
-        self.cancel_render()
-        retained_ids = {movie.id for movie in movies}
-        for movie_id, card in tuple(self._cards_by_id.items()):
-            if movie_id in retained_ids:
-                continue
-            self.grid_layout.removeWidget(card)
-            card.hide()
-            card.deleteLater()
-            del self._cards_by_id[movie_id]
-            del self._card_signatures[movie_id]
-        self.cards = [
-            card
-            for card in self.cards
-            if card.movie_id in retained_ids
-        ]
-
-    def resizeEvent(self, event):
-
-        super().resizeEvent(event)
-        self._layout_cards()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        QTimer.singleShot(0, self._refresh_visible_layout)
-
-    def _refresh_visible_layout(self):
-        if not self.isVisible():
-            return
-        self._column_count = 0
-        self._layout_cards()
-        self.grid_layout.activate()
-        self.grid_container.updateGeometry()
-
-    def _layout_cards(self):
-        self._column_count = layout_fixed_cards(
-            self.grid_layout,
-            self.scroll_area.viewport().width(),
-            MovieCard.CARD_WIDTH,
-            self.cards,
-            self._column_count,
+    def apply_color_theme(self, theme):
+        surface = "#f4f6f5" if theme == "light" else "#101417"
+        self.scroll_area.setStyleSheet(
+            "QScrollArea { background-color: "
+            f"{surface}; }}"
+            "QScrollArea > QWidget > QWidget { background-color: "
+            f"{surface}; }}"
+        )
+        self.grid_container.setStyleSheet(
+            "QWidget#catalogContent { background-color: "
+            f"{surface}; }}"
         )
 
-    def update_movie_favorite(self, movie_id, is_favorite):
+    def retain_movies(self, movies):
+        if self._render_click_handler is None:
+            return
+        retained_ids = {movie.id for movie in movies}
+        retained_items = [
+            movie for movie in self._items if movie.id in retained_ids
+        ]
+        self.render_movies(
+            retained_items,
+            self._render_click_handler,
+            self._sort_order,
+            self._selected_genre,
+        )
 
-        for card in self.cards:
-            if card.movie_id == movie_id:
-                card.update_favorite(is_favorite)
+    def _clear_rows(self):
+        while self.rows_layout.count():
+            item = self.rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                if isinstance(widget, MovieRow):
+                    widget.cancel_render()
+                widget.deleteLater()
+        self.rows = []
+        self.cards = []
+
+    def _connect_row(self, row):
+        row.favoriteChanged.connect(self.favoriteChanged.emit)
+        row.watchedChanged.connect(self.watchedChanged.emit)
+        row.cardAdded.connect(self.cards.append)
+
+    def _row_rendered(self):
+        self._pending_rows -= 1
+        if self._pending_rows == 0:
+            self.renderFinished.emit()
+
+    def update_movie_favorite(self, movie_id, is_favorite):
+        for row in self.rows:
+            row.update_movie_favorite(movie_id, is_favorite)
 
     def update_movie_watched(self, movie_id, is_watched):
-
-        for card in self.cards:
-            if card.movie_id == movie_id:
-                card.update_watched(is_watched)
+        for row in self.rows:
+            row.update_movie_watched(movie_id, is_watched)

@@ -1,6 +1,7 @@
 from app.models.database import SessionLocal
 from app.models.movie import Movie
 from app.scanner.path_utils import is_path_within_root
+import json
 
 
 def save_movie(movie_data):
@@ -150,6 +151,11 @@ def update_movie_metadata(
         movie.runtime = metadata["runtime"]
         movie.overview = metadata["overview"]
         movie.poster_path = metadata.get("poster_path") or ""
+        if "cast_members" in metadata:
+            movie.cast_members = json.dumps(
+                metadata["cast_members"] or [],
+                ensure_ascii=False,
+            )
 
         session.commit()
 

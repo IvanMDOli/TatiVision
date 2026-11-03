@@ -1,5 +1,5 @@
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QLabel, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
 from app.ui.views.empty_state_view import EmptyStateView
 from app.ui.views.series_detail_view import SeriesDetailView
@@ -9,21 +9,18 @@ from app.ui.widgets.series_grid import SeriesGrid
 class SeriesCatalogView(QWidget):
 
     seriesSelected = Signal(int)
+    backRequested = Signal()
+    favoriteChanged = Signal(int, bool)
+    watchedChanged = Signal(int, bool)
 
     def __init__(self):
 
         super().__init__()
 
         layout = QVBoxLayout(self)
-        self.context_label = QLabel()
-        self.context_label.setStyleSheet(
-            "color: #c7d0d4; font-size: 16px; font-weight: 700; "
-            "padding: 14px 18px 10px;"
-        )
-        self.context_label.hide()
-        layout.addWidget(self.context_label)
         self.pages = QStackedWidget()
         self.grid = SeriesGrid()
+        self.context_label = self.grid.context_label
         self.detail = SeriesDetailView()
         self.empty_state = EmptyStateView()
         self.empty_state.set_content(
@@ -36,8 +33,10 @@ class SeriesCatalogView(QWidget):
         self.grid.seriesSelected.connect(
             self.seriesSelected.emit
         )
+        self.grid.favoriteChanged.connect(self.favoriteChanged.emit)
+        self.grid.watchedChanged.connect(self.watchedChanged.emit)
         self.detail.backRequested.connect(
-            self.show_catalog
+            self.backRequested.emit
         )
 
         self.pages.addWidget(self.grid)
@@ -45,9 +44,20 @@ class SeriesCatalogView(QWidget):
         self.pages.addWidget(self.empty_state)
         layout.addWidget(self.pages)
 
-    def render_series(self, series_items, root_path, catalog_has_series=False):
+    def render_series(
+        self,
+        series_items,
+        root_path,
+        catalog_has_series=False,
+        sort_order="title_asc",
+        selected_genre=None,
+    ):
 
-        self.grid.render_series(series_items)
+        self.grid.render_series(
+            series_items,
+            sort_order,
+            selected_genre,
+        )
         if not series_items:
             if catalog_has_series:
                 self.empty_state.set_content(
@@ -71,8 +81,7 @@ class SeriesCatalogView(QWidget):
         )
 
     def set_context(self, text):
-        self.context_label.setText(text)
-        self.context_label.setVisible(bool(text))
+        self.grid.set_context(text)
 
     def show_detail(self, series, episodes):
 

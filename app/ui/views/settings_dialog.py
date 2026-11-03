@@ -3,6 +3,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -18,11 +19,13 @@ from PySide6.QtWidgets import (
 from app.services.catalog_service import reset_catalog
 from config.user_settings import get_user_settings, save_user_settings
 from app.vlc.player_catalog import discover_players, programs_directory
+from app.ui.theme import apply_theme
 
 
 class SettingsDialog(QDialog):
 
     databaseReset = Signal()
+    themeChanged = Signal(str)
 
     def __init__(self, parent=None, initial_setup=False):
         super().__init__(parent)
@@ -33,6 +36,7 @@ class SettingsDialog(QDialog):
         self.initial_setup = initial_setup
 
         settings = get_user_settings()
+        self.initial_theme = settings.get("theme", "dark")
         layout = QVBoxLayout(self)
         layout.setSpacing(14)
 
@@ -115,6 +119,12 @@ class SettingsDialog(QDialog):
             self.player_mode,
         )
 
+        self.dark_mode = QCheckBox("Usar tema oscuro", self)
+        self.dark_mode.setObjectName("darkModeCheck")
+        self.dark_mode.setChecked(self.initial_theme != "light")
+        self.dark_mode.stateChanged.connect(self._theme_toggled)
+        form.addRow("Apariencia", self.dark_mode)
+
         self.tmdb_key = QLineEdit(settings["tmdb_api_key"], self)
         self.tmdb_key.setEchoMode(QLineEdit.Password)
         self.tmdb_key.setPlaceholderText("Clave API de TMDb")
@@ -148,6 +158,11 @@ class SettingsDialog(QDialog):
         buttons.addWidget(cancel_button)
         buttons.addWidget(save_button)
         layout.addLayout(buttons)
+        apply_theme(
+            self,
+            self.initial_theme,
+            source_theme="dark",
+        )
 
     def _save(self):
         try:
@@ -162,12 +177,20 @@ class SettingsDialog(QDialog):
             save_user_settings({
                 **player_settings,
                 "tmdb_api_key": self.tmdb_key.text().strip(),
+                "theme": "dark" if self.dark_mode.isChecked() else "light",
             })
         except RuntimeError as error:
             QMessageBox.critical(self, "No se pudo guardar", str(error))
             return
 
         self.accept()
+
+    def _theme_toggled(self, state):
+        self.themeChanged.emit("dark" if state else "light")
+
+    def reject(self):
+        self.themeChanged.emit(self.initial_theme)
+        super().reject()
 
     def _reset_database(self):
         answer = QMessageBox.question(

@@ -2,17 +2,14 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QScrollArea,
-    QFrame,
     QStackedWidget,
 )
 from PySide6.QtCore import Signal
 
-from app.services.movie_service import (
-    get_movies_grouped_by_genre
-)
-
 from app.ui.widgets.movie_row import (
-    MovieRow
+    MovieRow,
+    catalog_separator,
+    group_catalog_items,
 )
 from app.ui.views.empty_state_view import EmptyStateView
 
@@ -74,11 +71,13 @@ class HomeView(QWidget):
             item = self.content_layout.takeAt(0)
             widget = item.widget()
             if widget:
+                if isinstance(widget, MovieRow):
+                    widget.cancel_render()
                 widget.deleteLater()
 
         self.rows = []
 
-        grouped = get_movies_grouped_by_genre(movies)
+        grouped = dict(group_catalog_items(movies))
         if not grouped:
             if root_path:
                 self.empty_state.set_content(
@@ -97,14 +96,7 @@ class HomeView(QWidget):
 
         for index, (genre, movies) in enumerate(sorted(grouped.items())):
             if index:
-                separator = QFrame()
-                separator.setFrameShape(QFrame.HLine)
-                separator.setObjectName("genreSeparator")
-                separator.setFixedHeight(1)
-                separator.setStyleSheet(
-                    "background-color: #252d32; border: none;"
-                )
-                self.content_layout.addWidget(separator)
+                self.content_layout.addWidget(catalog_separator())
 
             row = MovieRow(
                 genre,
@@ -123,6 +115,8 @@ class HomeView(QWidget):
                 self.watchedChanged.emit
             )
 
+        for row in self.rows:
+            row.start_render()
         self.content_layout.addStretch()
         self.pages.setCurrentIndex(0)
 
@@ -141,3 +135,7 @@ class HomeView(QWidget):
                 movie_id,
                 is_watched,
             )
+
+    def cancel_render(self):
+        for row in self.rows:
+            row.cancel_render()

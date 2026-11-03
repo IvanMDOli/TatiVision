@@ -46,22 +46,60 @@ def _tmdb_get(endpoint, params=None):
 
 
 def enrich_series(title, seasons, cancel_event=None):
+    return enrich_series_with_id(
+        title,
+        seasons,
+        cancel_event=cancel_event,
+    )
+
+
+def search_series_candidates(title, include_tmdb_id=None):
+    candidates = _tmdb_get(
+        "search/tv",
+        {"query": title},
+    ).get("results", [])
+    if include_tmdb_id is None or any(
+        candidate.get("id") == include_tmdb_id
+        for candidate in candidates
+    ):
+        return candidates
+
+    details = _tmdb_get(f"tv/{include_tmdb_id}")
+    current_candidate = {
+        "id": details["id"],
+        "name": details.get("name"),
+        "original_name": details.get("original_name"),
+        "first_air_date": details.get("first_air_date"),
+        "overview": details.get("overview"),
+    }
+    return [current_candidate, *candidates]
+
+
+def enrich_series_with_id(
+    title,
+    seasons,
+    cancel_event=None,
+    tmdb_id=None,
+):
     if cancel_event and cancel_event.is_set():
         return None
 
-    search_result = _tmdb_get(
-        "search/tv",
-        {"query": title},
+    if tmdb_id is None:
+        candidates = search_series_candidates(title)
+        if not candidates:
+            return None
+        tmdb_id = candidates[0]["id"]
+    series_id = tmdb_id
+    details = _tmdb_get(
+        f"tv/{series_id}",
+        {"append_to_response": "credits"},
     )
     if cancel_event and cancel_event.is_set():
         return None
-
-    results = search_result.get("results", [])
-    if not results:
-        return None
-
-    series_id = results[0]["id"]
-    details = _tmdb_get(f"tv/{series_id}")
+    credits = details.get("credits") or {}
+    cast = credits.get("cast") or []
+    if not cast:
+        cast = _tmdb_get(f"tv/{series_id}/credits").get("cast") or []
     if cancel_event and cancel_event.is_set():
         return None
 
@@ -103,12 +141,35 @@ def enrich_series(title, seasons, cancel_event=None):
 
     return {
         "tmdb_id": series_id,
+        "year": (
+            int((details.get("first_air_date") or "")[:4])
+            if (details.get("first_air_date") or "")[:4].isdigit()
+            else None
+        ),
+        "runtime": (
+            round(sum(details["episode_run_time"]) / len(details["episode_run_time"]))
+            if details.get("episode_run_time")
+            else None
+        ),
         "genre": ", ".join(
             genre["name"]
             for genre in details.get("genres", [])
         ),
         "overview": details.get("overview") or "",
         "poster_path": poster_path,
+        "director": ", ".join(
+            person["name"]
+            for person in (details.get("created_by") or [])
+            if person.get("name")
+        ),
+        "cast_members": [
+            {
+                "name": person.get("name"),
+                "character": person.get("character"),
+            }
+            for person in cast[:30]
+            if person.get("name")
+        ],
         "episodes": season_episodes,
     }
 
@@ -181,7 +242,7 @@ def get_movie_credits(tmdb_id):
 
 def get_director(credits):
 
-    for person in credits["crew"]:
+    for person in credits.get("crew", []):
 
         if person["job"] == "Director":
 
@@ -232,7 +293,7 @@ def enrich_movie(title, year, tmdb_id=None):
     )
 
     director = get_director(
-        details.get("credits", {})
+        details.get("credits") or {}
     )
 
     poster_file = f"movie_{tmdb_id}.jpg"
@@ -262,5 +323,15 @@ def enrich_movie(title, year, tmdb_id=None):
         ),
         "runtime": details.get("runtime"),
         "overview": details.get("overview") or "",
-        "poster_path": poster_path
+        "poster_path": poster_path,
+        "cast_members": [
+            {
+                "name": person.get("name"),
+                "character": person.get("character"),
+            }
+            for person in (
+                (details.get("credits") or {}).get("cast") or []
+            )[:30]
+            if person.get("name")
+        ],
     }

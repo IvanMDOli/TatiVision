@@ -1,3 +1,9 @@
+import colorsys
+import re
+
+from PySide6.QtWidgets import QWidget
+
+
 APP_STYLESHEET = """
     QMainWindow, QWidget#appCentral, QWidget#appSidebar {
         background-color: #14181c;
@@ -73,6 +79,38 @@ APP_STYLESHEET = """
         background-color: #1b2227;
         selection-background-color: #173b2a;
         selection-color: #00e054;
+    }
+    QComboBox#catalogSort {
+        min-height: 32px;
+        padding: 2px 30px 2px 11px;
+        border: 1px solid #39454b;
+        border-radius: 6px;
+        background-color: #20272c;
+    }
+    QComboBox#catalogSort:hover,
+    QComboBox#catalogSort:focus {
+        border-color: #00a847;
+    }
+    QComboBox#catalogSort::drop-down {
+        width: 24px;
+        border: none;
+        border-left: 1px solid #354047;
+        border-top-right-radius: 6px;
+        border-bottom-right-radius: 6px;
+    }
+    QComboBox#catalogSort::down-arrow {
+        image: none;
+        width: 0;
+        height: 0;
+    }
+    QComboBox#catalogSort QAbstractItemView {
+        padding: 4px;
+        border: 1px solid #354047;
+        border-radius: 6px;
+        background-color: #1b2227;
+        selection-background-color: #173b2a;
+        selection-color: #00e054;
+        outline: none;
     }
     QListWidget::item {
         border-radius: 4px;
@@ -249,6 +287,22 @@ APP_STYLESHEET = """
         width: 0;
         background: transparent;
     }
+    QCheckBox#darkModeCheck {
+        spacing: 9px;
+        color: #d7dddf;
+        padding: 4px 0;
+    }
+    QCheckBox#darkModeCheck::indicator {
+        width: 18px;
+        height: 18px;
+        border: 1px solid #536168;
+        border-radius: 5px;
+        background-color: #1b2227;
+    }
+    QCheckBox#darkModeCheck::indicator:checked {
+        border-color: #00c94b;
+        background-color: #087e3d;
+    }
 """
 
 HEADER_BUTTON_STYLESHEET = """
@@ -271,3 +325,154 @@ HEADER_BUTTON_STYLESHEET = """
         font-weight: 600;
     }
 """
+
+DARK_TO_LIGHT = {
+    "#81a8d1": "#81a8d1",
+    "#14181c": "#f4f6f5",
+    "#101417": "#eef1ef",
+    "#0e1113": "#e4e9e6",
+    "#171c20": "#e8ecea",
+    "#191f23": "#e9edeb",
+    "#1b2227": "#f8f9f8",
+    "#20272c": "#e3e8e5",
+    "#242e33": "#dce3df",
+    "#25272c": "#dde2df",
+    "#252d32": "#dfe5e2",
+    "#252e33": "#e1e7e4",
+    "#252f34": "#dce3df",
+    "#293238": "#cbd4cf",
+    "#2c373e": "#d5dcd8",
+    "#2e383e": "#c8d1cc",
+    "#303a3f": "#cbd4cf",
+    "#303b41": "#cbd4cf",
+    "#343d42": "#c1cbc6",
+    "#354047": "#c1cbc6",
+    "#39434a": "#b9c3be",
+    "#39454b": "#aeb9b3",
+    "#536168": "#818c86",
+    "#6f787d": "#929c97",
+    "#7e8a90": "#69756f",
+    "#879197": "#717d77",
+    "#89939a": "#69756f",
+    "#89949b": "#69756f",
+    "#929a9e": "#66716b",
+    "#9aa5ab": "#68746e",
+    "#9ca7ac": "#68746e",
+    "#aab4ba": "#55615b",
+    "#aaaaaa": "#626d67",
+    "#c5cdd1": "#414b45",
+    "#c7d0d4": "#414b45",
+    "#c9d1d9": "#3e4842",
+    "#cbd2d6": "#414b45",
+    "#d1d7da": "#39443e",
+    "#d5dbde": "#37423c",
+    "#d7dddf": "#37423c",
+    "#e5e9eb": "#303b35",
+    "#e7eaec": "#303b35",
+    "#f2f2f2": "#252d28",
+    "#f2f4f5": "#252d28",
+    "#e8edef": "#303b35",
+    "rgba(20, 24, 28, 225)": "rgba(248, 249, 248, 235)",
+    "white": "#252d28",
+    "#ffffff": "#202722",
+}
+
+LIGHT_TO_DARK = {
+    light: dark
+    for dark, light in DARK_TO_LIGHT.items()
+    if light not in {
+        "#55615b",
+    }
+}
+
+CURRENT_THEME = "dark"
+
+
+def _replace_colors(stylesheet, replacements):
+    if not stylesheet:
+        return stylesheet
+    non_hex = {
+        color: f"__TV_COLOR_{index}__"
+        for index, color in enumerate(replacements)
+        if not color.startswith("#")
+    }
+    for color, token in non_hex.items():
+        stylesheet = stylesheet.replace(color, token)
+
+    def replace_match(match):
+        color = match.group(0).lower()
+        if color in replacements:
+            return replacements[color]
+        if replacements is not DARK_TO_LIGHT:
+            return color
+        red, green, blue = (
+            int(color[index:index + 2], 16) / 255
+            for index in (1, 3, 5)
+        )
+        hue, lightness, saturation = colorsys.rgb_to_hls(
+            red,
+            green,
+            blue,
+        )
+        if saturation > 0.68:
+            return color
+        if lightness < 0.30:
+            lightness = 0.92
+        elif lightness > 0.76:
+            lightness = 0.23
+        else:
+            lightness = 0.35 if lightness > 0.50 else 0.72
+        red, green, blue = colorsys.hls_to_rgb(hue, lightness, saturation)
+        return "#{:02x}{:02x}{:02x}".format(
+            round(red * 255),
+            round(green * 255),
+            round(blue * 255),
+        )
+
+    stylesheet = re.sub(r"#[0-9a-fA-F]{6}", replace_match, stylesheet)
+    for color, token in non_hex.items():
+        stylesheet = stylesheet.replace(token, replacements[color])
+    return stylesheet
+
+
+def apply_theme(root, theme, source_theme=None):
+    global CURRENT_THEME
+    if theme not in ("dark", "light"):
+        raise ValueError(f"Tema desconocido: {theme}")
+    source_theme = source_theme or CURRENT_THEME
+    if source_theme not in ("dark", "light"):
+        raise ValueError(f"Tema desconocido: {source_theme}")
+    widgets = [root, *root.findChildren(QWidget)]
+    dark_stylesheets = {}
+    for widget in widgets:
+        dark_stylesheet = widget.property("_tativision_dark_stylesheet")
+        if dark_stylesheet is None:
+            dark_stylesheet = widget.styleSheet()
+            if source_theme == "light":
+                dark_stylesheet = _replace_colors(
+                    dark_stylesheet,
+                    LIGHT_TO_DARK,
+                )
+            widget.setProperty(
+                "_tativision_dark_stylesheet",
+                dark_stylesheet,
+            )
+        dark_stylesheets[widget] = dark_stylesheet
+
+    for widget in widgets:
+        dark_stylesheet = dark_stylesheets[widget]
+        widget.setStyleSheet(
+            dark_stylesheet
+            if theme == "dark"
+            else _replace_colors(dark_stylesheet, DARK_TO_LIGHT)
+        )
+
+    for widget in widgets:
+        color_theme_handler = getattr(widget, "apply_color_theme", None)
+        if callable(color_theme_handler):
+            color_theme_handler(theme)
+    CURRENT_THEME = theme
+
+
+def get_current_theme():
+    return CURRENT_THEME

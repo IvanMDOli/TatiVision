@@ -16,6 +16,8 @@ from app.services.movie_service import (
 )
 from app.ui.poster_utils import load_poster
 from app.ui.icon_utils import load_ui_icon
+from app.ui.widgets.cast_widget import CastWidget
+from app.ui.theme import apply_theme, get_current_theme
 from app.vlc.player import play_movie
 
 
@@ -140,7 +142,21 @@ class MovieDetailWindow(QWidget):
         eyebrow.setStyleSheet(
             "color: #00e054; font-size: 11px; font-weight: 700; letter-spacing: 1px;"
         )
-        details.addWidget(eyebrow)
+        details_header = QHBoxLayout()
+        details_header.addWidget(eyebrow)
+        details_header.addStretch()
+        self.metadata_button = QPushButton()
+        self.metadata_button.setObjectName("metadataButton")
+        self.metadata_button.setIcon(load_ui_icon("edit", "#c9d1d9"))
+        self.metadata_button.setIconSize(QSize(18, 18))
+        self.metadata_button.setCursor(Qt.PointingHandCursor)
+        self.metadata_button.setFixedSize(42, 36)
+        self.metadata_button.setToolTip(
+            "Volver a consultar TMDb y corregir los metadatos de esta película"
+        )
+        self.metadata_button.clicked.connect(self.request_metadata_refresh)
+        details_header.addWidget(self.metadata_button)
+        details.addLayout(details_header)
 
         title = QLabel(movie.title or "Película sin título")
         title.setWordWrap(True)
@@ -182,6 +198,13 @@ class MovieDetailWindow(QWidget):
             "color: #d5dbde; font-size: 14px; line-height: 1.4;"
         )
         details.addWidget(overview)
+        cast_heading = QLabel("REPARTO")
+        cast_heading.setStyleSheet(
+            "color: #89949b; font-size: 11px; font-weight: 700; "
+            "letter-spacing: 1px;"
+        )
+        details.addWidget(cast_heading)
+        details.addWidget(CastWidget(movie.cast_members))
         details.addStretch()
 
         actions = QHBoxLayout()
@@ -206,18 +229,6 @@ class MovieDetailWindow(QWidget):
         self.play_button.clicked.connect(self.play_movie)
         actions.addWidget(self.play_button)
 
-        self.metadata_button = QPushButton()
-        self.metadata_button.setObjectName("metadataButton")
-        self.metadata_button.setIcon(load_ui_icon("edit", "#c9d1d9"))
-        self.metadata_button.setIconSize(QSize(18, 18))
-        self.metadata_button.setCursor(Qt.PointingHandCursor)
-        self.metadata_button.setFixedSize(42, 36)
-        self.metadata_button.setToolTip(
-            "Volver a consultar TMDb y corregir los metadatos de esta película"
-        )
-        self.metadata_button.clicked.connect(self.request_metadata_refresh)
-        actions.addWidget(self.metadata_button)
-
         self.favorite_button = QPushButton()
         self.favorite_button.setIconSize(QSize(18, 18))
         self.favorite_button.setCursor(Qt.PointingHandCursor)
@@ -236,6 +247,7 @@ class MovieDetailWindow(QWidget):
 
         self.update_favorite_button()
         self.update_watched_button()
+        apply_theme(self, get_current_theme(), source_theme="dark")
 
     def _clear_content(self):
 

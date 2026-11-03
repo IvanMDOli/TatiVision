@@ -11,13 +11,17 @@ from PySide6.QtWidgets import (
 
 class MetadataCandidateDialog(QDialog):
 
-    def __init__(self, movie, candidates, parent=None):
+    def __init__(self, movie, candidates, parent=None, media_type="movie"):
         super().__init__(parent)
-        self.setWindowTitle("Corregir metadatos de la película")
+        self.media_type = media_type
+        is_series = media_type == "series"
+        media_label = "serie" if is_series else "película"
+        self.setWindowTitle(f"Corregir metadatos de la {media_label}")
         self.setMinimumSize(560, 460)
 
         layout = QVBoxLayout(self)
-        movie_year = f" ({movie.year})" if movie.year else ""
+        entity_year = getattr(movie, "year", None)
+        movie_year = f" ({entity_year})" if entity_year else ""
         heading = QLabel(
             f"Elegí la coincidencia correcta de TMDb para "
             f"{movie.title or 'Sin título'}{movie_year}."
@@ -29,12 +33,25 @@ class MetadataCandidateDialog(QDialog):
         self.candidate_list = QListWidget()
         self.candidate_list.setSelectionMode(QListWidget.SingleSelection)
         for candidate in candidates:
-            release_date = candidate.get("release_date") or ""
+            release_date = (
+                candidate.get("first_air_date")
+                if is_series
+                else candidate.get("release_date")
+            ) or ""
             release_year = release_date[:4] if release_date else "año desconocido"
-            original_title = candidate.get("original_title") or ""
-            display = f"{candidate.get('title') or 'Sin título'} ({release_year})"
+            original_title = (
+                candidate.get("original_name")
+                if is_series
+                else candidate.get("original_title")
+            ) or ""
+            candidate_title = (
+                candidate.get("name")
+                if is_series
+                else candidate.get("title")
+            ) or "Sin título"
+            display = f"{candidate_title} ({release_year})"
             if original_title and original_title.casefold() != (
-                candidate.get("title") or ""
+                candidate_title
             ).casefold():
                 display += f"  ·  {original_title}"
             item = QListWidgetItem(display)
@@ -56,7 +73,7 @@ class MetadataCandidateDialog(QDialog):
 
         buttons = QDialogButtonBox()
         self.confirm_button = buttons.addButton(
-            "Usar esta película",
+            f"Usar esta {media_label}",
             QDialogButtonBox.AcceptRole,
         )
         self.skip_button = buttons.addButton(

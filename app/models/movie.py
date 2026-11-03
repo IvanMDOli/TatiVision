@@ -32,3 +32,5 @@ class Movie(Base):
     favorite = Column(Boolean, default=False)
 
     watched = Column(Boolean, default=False, nullable=False)
+
+    cast_members = Column(Text)

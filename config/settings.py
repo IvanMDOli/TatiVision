@@ -11,4 +11,5 @@ DEFAULT_SETTINGS = {
     "tmdb_api_key": os.getenv("TMDB_API_KEY", ""),
     "player_mode": "system",
     "custom_player_path": "",
+    "theme": "dark",
 }

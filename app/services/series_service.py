@@ -1,3 +1,5 @@
+import json
+
 from app.models.database import SessionLocal
 from app.models.episode import Episode
 from app.models.series import Series
@@ -51,7 +53,11 @@ def get_series_for_metadata(root_path=None, force_update=False):
     return [
         series
         for series in series_items
-        if series.tmdb_id is None
+        if (
+            series.tmdb_id is None
+            or not series.cast_members
+            or series.cast_members.strip() in ("[]", "null")
+        )
     ]
 
 
@@ -138,9 +144,11 @@ def sync_series(series_data):
                     series_id=series.id,
                     season=episode_data["season"],
                     episode=episode_data["episode"],
+                    watched=False,
                 )
                 session.add(episode)
                 episode.title = episode_data["title"]
+                series.watched = False
             elif not series_has_metadata:
                 episode.title = episode_data["title"]
             episode.video_path = episode_data["video_path"]
@@ -172,8 +180,15 @@ def update_series_metadata(series_id, metadata):
             )
 
         series.tmdb_id = metadata["tmdb_id"]
+        series.year = metadata.get("year")
+        series.runtime = metadata.get("runtime")
         series.genre = metadata["genre"]
         series.overview = metadata["overview"]
+        series.director = metadata.get("director") or ""
+        series.cast_members = json.dumps(
+            metadata.get("cast_members") or [],
+            ensure_ascii=False,
+        )
         if metadata["poster_path"]:
             series.poster_path = metadata["poster_path"]
 
@@ -198,3 +213,111 @@ def update_series_metadata(series_id, metadata):
 
     finally:
         session.close()
+
+
+def set_episode_watched(episode_id, watched):
+    session = SessionLocal()
+    try:
+        episode = session.query(Episode).filter_by(id=episode_id).first()
+        if episode is None:
+            raise LookupError(f"No se encontró el episodio con id {episode_id}")
+        episode.watched = bool(watched)
+        _update_series_watched(session, episode.series_id)
+        session.commit()
+        return bool(episode.watched)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def set_season_watched(series_id, season, watched):
+    session = SessionLocal()
+    try:
+        episodes = (
+            session.query(Episode)
+            .filter_by(series_id=series_id, season=season)
+            .all()
+        )
+        for episode in episodes:
+            episode.watched = bool(watched)
+        series_watched = _update_series_watched(session, series_id)
+        session.commit()
+        return series_watched
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def set_series_watched(series_id, watched):
+    session = SessionLocal()
+    try:
+        series = session.query(Series).filter_by(id=series_id).first()
+        if series is None:
+            raise LookupError(f"No se encontró la serie con id {series_id}")
+        episodes = (
+            session.query(Episode)
+            .filter_by(series_id=series_id)
+            .all()
+        )
+        for episode in episodes:
+            episode.watched = bool(watched)
+        series.watched = bool(watched)
+        session.commit()
+        return bool(series.watched)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def toggle_series_favorite(series_id):
+    session = SessionLocal()
+    try:
+        series = session.query(Series).filter_by(id=series_id).first()
+        if series is None:
+            raise LookupError(f"No se encontró la serie con id {series_id}")
+        series.favorite = not bool(series.favorite)
+        session.commit()
+        return bool(series.favorite)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def set_series_favorite(series_id, favorite):
+    session = SessionLocal()
+    try:
+        series = session.query(Series).filter_by(id=series_id).first()
+        if series is None:
+            raise LookupError(f"No se encontró la serie con id {series_id}")
+        series.favorite = bool(favorite)
+        session.commit()
+        return bool(series.favorite)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _update_series_watched(session, series_id):
+    series = session.query(Series).filter_by(id=series_id).first()
+    if series is None:
+        raise LookupError(f"No se encontró la serie con id {series_id}")
+    episodes = (
+        session.query(Episode)
+        .filter_by(series_id=series_id)
+        .all()
+    )
+    series.watched = bool(episodes) and all(
+        bool(episode.watched)
+        for episode in episodes
+    )
+    return bool(series.watched)

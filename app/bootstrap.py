@@ -37,3 +37,50 @@ def initialize_database():
             connection.exec_driver_sql(
                 "ALTER TABLE series ADD COLUMN tmdb_id INTEGER"
             )
+        if "year" not in series_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE series ADD COLUMN year INTEGER"
+            )
+        if "runtime" not in series_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE series ADD COLUMN runtime INTEGER"
+            )
+        if "director" not in series_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE series ADD COLUMN director VARCHAR"
+            )
+        if "favorite" not in series_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE series "
+                "ADD COLUMN favorite BOOLEAN NOT NULL DEFAULT 0"
+            )
+        if "watched" not in series_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE series "
+                "ADD COLUMN watched BOOLEAN NOT NULL DEFAULT 0"
+            )
+        if "cast_members" not in series_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE series ADD COLUMN cast_members TEXT"
+            )
+
+    movie_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("movies")
+    }
+    if "cast_members" not in movie_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE movies ADD COLUMN cast_members TEXT"
+            )
+
+    episode_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("episodes")
+    }
+    if "watched" not in episode_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE episodes "
+                "ADD COLUMN watched BOOLEAN NOT NULL DEFAULT 0"
+            )

@@ -10,13 +10,13 @@ class SearchBar(QLineEdit):
         super().__init__()
 
         self.setPlaceholderText(
-            "Buscar película..."
+            "Buscar película o director..."
         )
 
     def set_catalog(self, catalog):
 
         self.setPlaceholderText(
-            "Buscar serie..."
+            "Buscar serie o creador..."
             if catalog == "series"
-            else "Buscar película..."
+            else "Buscar película o director..."
         )

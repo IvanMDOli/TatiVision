@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 from PySide6.QtCore import QThread, QTimer, QSize, Signal
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.services.movie_service import (
     delete_movies_by_ids,
@@ -37,6 +38,10 @@ from app.services.series_service import (
     get_all_series_genres,
     get_episodes_for_series,
     get_series_by_id,
+    set_episode_watched,
+    set_season_watched,
+    set_series_favorite,
+    set_series_watched,
 )
 from app.ui.views.library_dialog import LibraryDialog
 from app.ui.widgets.library_panel import LibraryPanel
@@ -59,7 +64,7 @@ from app.ui.views.filtered_view import (
 from app.ui.views.series_catalog_view import (
     SeriesCatalogView
 )
-from app.ui.theme import APP_STYLESHEET
+from app.ui.theme import APP_STYLESHEET, apply_theme
 from app.ui.views.metadata_candidate_dialog import MetadataCandidateDialog
 from app.ui.views.settings_dialog import SettingsDialog
 from app.ui.icon_utils import load_ui_icon
@@ -85,12 +90,14 @@ class LibraryTask(QThread):
         parent=None,
         configured_libraries=None,
         movie_id=None,
+        series_id=None,
         library=None,
     ):
 
         super().__init__(parent)
         self.action = action
         self.movie_id = movie_id
+        self.series_id = series_id
         self.library = library or get_active_library() or {}
         self.movie_path = self.library.get(
             "movies_path",
@@ -106,10 +113,11 @@ class LibraryTask(QThread):
             "series",
         }
 
-    def _select_metadata_candidate(self, movie, candidates):
+    def _select_metadata_candidate(self, entity, candidates, media_type):
         decision = {
-            "movie": movie,
+            "entity": entity,
             "candidates": candidates,
+            "media_type": media_type,
             "event": Event(),
             "selected_tmdb_id": None,
         }
@@ -332,9 +340,77 @@ class LibraryTask(QThread):
                 result = update_metadata(
                     root_path=self.movie_path,
                     movie_id=self.movie_id,
-                    candidate_selector=self._select_metadata_candidate,
+                    candidate_selector=lambda movie, candidates:
+                    self._select_metadata_candidate(
+                        movie,
+                        candidates,
+                        "movie",
+                    ),
                     progress_callback=self._report_metadata_progress,
                 )
+            elif self.action == "series_metadata_one":
+                from app.metadata.tmdb import (
+                    enrich_series_with_id,
+                    search_series_candidates,
+                )
+                from app.services.series_service import (
+                    get_episodes_for_series,
+                    get_series_by_id,
+                    update_series_metadata,
+                )
+
+                series = get_series_by_id(
+                    self.series_id,
+                    self.series_path,
+                )
+                if series is None:
+                    raise LookupError(
+                        f"No se encontró la serie con id {self.series_id}"
+                    )
+                candidates = search_series_candidates(
+                    series.title,
+                    include_tmdb_id=series.tmdb_id,
+                )
+                if not candidates:
+                    result = {
+                        "series_metadata_id": self.series_id,
+                        "updated": False,
+                        "not_found": True,
+                    }
+                else:
+                    selected_tmdb_id = self._select_metadata_candidate(
+                        series,
+                        candidates,
+                        "series",
+                    )
+                    if selected_tmdb_id is None:
+                        result = {
+                            "series_metadata_id": self.series_id,
+                            "updated": False,
+                            "skipped": True,
+                        }
+                    else:
+                        episodes = get_episodes_for_series(
+                            series.id,
+                            self.series_path,
+                        )
+                        metadata = enrich_series_with_id(
+                            series.title,
+                            [episode.season for episode in episodes],
+                            tmdb_id=selected_tmdb_id,
+                        )
+                        if metadata is None:
+                            result = {
+                                "series_metadata_id": self.series_id,
+                                "updated": False,
+                                "not_found": True,
+                            }
+                        else:
+                            update_series_metadata(series.id, metadata)
+                            result = {
+                                "series_metadata_id": self.series_id,
+                                "updated": True,
+                            }
             elif self.action == "force":
                 scanned = scan_library(
                     self.movie_path,
@@ -436,17 +512,21 @@ class MainWindow(QMainWindow):
             800
         )
         self.setStyleSheet(APP_STYLESHEET)
+        self.current_theme = get_user_setting("theme")
 
         self.movies = []
         self.series = []
+        self.selected_series_id = None
         self.library_worker = None
         self._settings_dialog = None
         self.active_catalog = "movies"
 
         self.showing_favorites = False
         self.showing_unwatched = False
+        self.sort_order = "title_asc"
 
         self.selected_genre = None
+        self._home_view_dirty = True
 
         self.search_text = ""
         self.filter_timer = QTimer(self)
@@ -650,6 +730,9 @@ class MainWindow(QMainWindow):
         self.header.watched_filter_button.clicked.connect(
             self.toggle_watched_filter
         )
+        self.header.sort_combo.currentIndexChanged.connect(
+            self._sort_order_changed
+        )
 
         # -------------------------
         # Vistas
@@ -680,6 +763,30 @@ class MainWindow(QMainWindow):
         self.series_view = SeriesCatalogView()
         self.series_view.seriesSelected.connect(
             self.open_series
+        )
+        self.series_view.backRequested.connect(
+            self.return_to_series_catalog
+        )
+        self.series_view.favoriteChanged.connect(
+            self.update_series_favorite
+        )
+        self.series_view.watchedChanged.connect(
+            self.update_series_watched
+        )
+        self.series_view.detail.favoriteChanged.connect(
+            self.update_series_favorite
+        )
+        self.series_view.detail.watchedChanged.connect(
+            self.update_series_watched
+        )
+        self.series_view.detail.episodeWatchedChanged.connect(
+            self.update_episode_watched
+        )
+        self.series_view.detail.seasonWatchedChanged.connect(
+            self.update_season_watched
+        )
+        self.series_view.detail.metadataRefreshRequested.connect(
+            self.refresh_series_metadata
         )
         self.home_view.favoriteChanged.connect(
             self.update_movie_favorite
@@ -723,6 +830,12 @@ class MainWindow(QMainWindow):
             5
         )
 
+        apply_theme(
+            self,
+            self.current_theme,
+            source_theme="dark",
+        )
+        self.header.set_theme(self.current_theme)
         self.load_movies()
 
     def load_movies(self, apply_filters=True):
@@ -730,9 +843,13 @@ class MainWindow(QMainWindow):
         series_path = get_user_setting("series_path")
         self.movies = get_all_movies(movies_path) if movies_path else []
         self.series = get_all_series(series_path) if series_path else []
-        self.filtered_view.retain_movies(self.movies)
-        self.home_view.reload(self.movies, movies_path or "")
-        self.series_view.render_series(self.series, series_path or "")
+        self.home_view.cancel_render()
+        self.series_view.grid.cancel_render()
+        self.filtered_view.cancel_render()
+        self._home_view_dirty = True
+        if self.active_catalog == "movies":
+            self.home_view.reload(self.movies, movies_path or "")
+            self._home_view_dirty = False
         self.refresh_genres()
         self.refresh_library_buttons()
         if apply_filters:
@@ -748,9 +865,17 @@ class MainWindow(QMainWindow):
         self.filtered_view.cancel_render()
         dialog = SettingsDialog(self)
         self._settings_dialog = dialog
+        dialog.themeChanged.connect(self._set_theme)
         dialog.databaseReset.connect(self.load_movies)
         dialog.finished.connect(self._settings_dialog_finished)
         dialog.open()
+
+    def _set_theme(self, theme):
+        if theme == self.current_theme:
+            return
+        apply_theme(self, theme, source_theme=self.current_theme)
+        self.current_theme = theme
+        self.header.set_theme(theme)
 
     def _settings_dialog_finished(self, result):
         if result == QDialog.DialogCode.Accepted:
@@ -763,6 +888,7 @@ class MainWindow(QMainWindow):
 
     def add_library(self):
         dialog = LibraryDialog(self)
+        apply_theme(dialog, self.current_theme, source_theme="dark")
         if not dialog.exec() or dialog.library is None:
             return
         library = dialog.library
@@ -903,6 +1029,10 @@ class MainWindow(QMainWindow):
     def switch_catalog(self, catalog):
 
         self.active_catalog = catalog
+        if catalog == "movies" and self._home_view_dirty:
+            movies_path = get_user_setting("movies_path")
+            self.home_view.reload(self.movies, movies_path or "")
+            self._home_view_dirty = False
         self.selected_genre = None
         self.showing_favorites = False
         self.showing_unwatched = False
@@ -922,6 +1052,7 @@ class MainWindow(QMainWindow):
             self.metadata_button.hide()
             self.header.favorites_button.show()
             self.header.watched_filter_button.show()
+            self.header.sort_combo.show()
         else:
             self.scan_button.setText("Analizar y cargar series")
             self.scan_button.setToolTip(
@@ -936,11 +1067,18 @@ class MainWindow(QMainWindow):
             self.force_update_button.setToolTip(
                 "Vuelve a analizar la carpeta y actualiza en TMDb todas las series."
             )
-            self.header.favorites_button.hide()
-            self.header.watched_filter_button.hide()
+            self.header.favorites_button.show()
+            self.header.watched_filter_button.show()
+            self.header.sort_combo.show()
+            self.header.sort_combo.setToolTip(
+                "Ordenar el catálogo de series"
+            )
             self.series_view.show_catalog()
 
         if catalog == "movies":
+            self.header.sort_combo.setToolTip(
+                "Ordenar el catálogo de películas"
+            )
             self.metadata_button.setText("Cargar datos pendientes")
             self.force_update_button.setText("Carga forzada")
 
@@ -953,6 +1091,7 @@ class MainWindow(QMainWindow):
         action,
         configured_libraries=None,
         movie_id=None,
+        series_id=None,
         library=None,
     ):
 
@@ -966,6 +1105,7 @@ class MainWindow(QMainWindow):
             "scan_series",
             "series_metadata",
             "series_force",
+            "series_metadata_one",
         )
         selected_library = library or get_active_library() or {}
         root_path = selected_library.get(
@@ -979,6 +1119,7 @@ class MainWindow(QMainWindow):
             "force",
             "series_metadata",
             "series_force",
+            "series_metadata_one",
             "metadata_movie",
         )
         if requires_root and not root_path:
@@ -1007,6 +1148,7 @@ class MainWindow(QMainWindow):
             "series_force": "Analizando series y actualizando metadatos...",
             "scan_configured": "Actualizando las bibliotecas...",
             "metadata_movie": "Buscando coincidencias de TMDb para la película...",
+            "series_metadata_one": "Buscando coincidencias de TMDb para la serie...",
         }
         self.library_status.setText(
             task_status.get(action, "Actualizando información desde TMDb...")
@@ -1036,6 +1178,7 @@ class MainWindow(QMainWindow):
             self,
             configured_libraries=configured_libraries,
             movie_id=movie_id,
+            series_id=series_id,
             library=selected_library,
         )
         self.library_worker.completed.connect(
@@ -1073,10 +1216,12 @@ class MainWindow(QMainWindow):
 
     def review_metadata_candidates(self, decision):
         dialog = MetadataCandidateDialog(
-            decision["movie"],
+            decision["entity"],
             decision["candidates"][:10],
             self,
+            media_type=decision["media_type"],
         )
+        apply_theme(dialog, self.current_theme, source_theme="dark")
         try:
             if dialog.exec():
                 decision["selected_tmdb_id"] = dialog.selected_tmdb_id()
@@ -1085,13 +1230,39 @@ class MainWindow(QMainWindow):
 
     def library_task_completed(self, result):
         movie_id = result.get("movie_id")
-        self.load_movies(apply_filters=movie_id is None)
+        series_id = result.get("series_metadata_id")
+        self.load_movies(
+            apply_filters=movie_id is None and series_id is None
+        )
 
         if movie_id is not None:
             movie = get_movie_by_id(movie_id)
             if movie is not None:
                 self.movie_detail_view.show_movie(movie)
                 self._set_main_view(self.movie_detail_view)
+
+        if series_id is not None:
+            if result.get("updated"):
+                self.library_status.setText(
+                    "Metadatos de la serie actualizados desde TMDb."
+                )
+                self.open_series(series_id)
+            elif result.get("not_found"):
+                self.library_status.setText(
+                    "No se encontró una coincidencia para la serie en TMDb."
+                )
+                QMessageBox.information(
+                    self,
+                    "Serie no encontrada",
+                    "TMDb no devolvió resultados para esta serie.",
+                )
+                self.open_series(series_id)
+            else:
+                self.library_status.setText(
+                    "Actualización de metadatos de la serie omitida."
+                )
+                self.open_series(series_id)
+            return
 
         if "series_found" in result:
             if result.get("configured_scan"):
@@ -1344,8 +1515,7 @@ class MainWindow(QMainWindow):
     def filter_movies(self, text):
 
         self.search_text = text
-
-        self.apply_filters()
+        self.filter_timer.start(140)
 
     def toggle_favorites(self):
         self.showing_favorites = self.header.favorites_button.isChecked()
@@ -1355,6 +1525,10 @@ class MainWindow(QMainWindow):
     def toggle_watched_filter(self):
         self.showing_unwatched = self.header.watched_filter_button.isChecked()
         self._sync_filter_icons()
+        self.apply_filters()
+
+    def _sort_order_changed(self, _index):
+        self.sort_order = self.header.sort_combo.currentData()
         self.apply_filters()
 
     def _sync_filter_icons(self):
@@ -1374,6 +1548,12 @@ class MainWindow(QMainWindow):
         self.header.watched_filter_button.setText(
             "Todas" if self.showing_unwatched else "No vistas"
         )
+        content = "series" if self.active_catalog == "series" else "películas"
+        self.header.watched_filter_button.setToolTip(
+            f"Mostrar {content} no vistas"
+            if not self.showing_unwatched
+            else f"Mostrar todas las {content}"
+        )
 
     def _filter_context(self):
         parts = []
@@ -1385,6 +1565,18 @@ class MainWindow(QMainWindow):
             parts.append("No vistas")
         if self.search_text:
             parts.append(f"Búsqueda: «{self.search_text.strip()}»")
+        if self.sort_order != "title_asc":
+            sort_labels = {
+                "director_asc": "Director A–Z",
+                "director_desc": "Director Z–A",
+                "year_asc": "Año ascendente",
+                "year_desc": "Año descendente",
+                "runtime_asc": "Duración ascendente",
+                "runtime_desc": "Duración descendente",
+            }
+            parts.append(
+                f"Orden: {sort_labels.get(self.sort_order, self.sort_order)}"
+            )
         return "Catálogo · " + " · ".join(parts)
 
     def filter_series(self, series_items):
@@ -1401,15 +1593,58 @@ class MainWindow(QMainWindow):
                 }
             ]
 
+        if self.showing_favorites:
+            filtered_series = [
+                series
+                for series in filtered_series
+                if bool(series.favorite)
+            ]
+
+        if self.showing_unwatched:
+            filtered_series = [
+                series
+                for series in filtered_series
+                if not bool(series.watched)
+            ]
+
         if self.search_text:
             search = self.search_text.casefold()
             filtered_series = [
                 series
                 for series in filtered_series
                 if search in (series.title or "").casefold()
+                or search in (series.director or "").casefold()
             ]
 
-        return filtered_series
+        return self._sort_series(filtered_series)
+
+    def _sort_series(self, series_items):
+        sort_values = {
+            "director": lambda series: (
+                series.director.casefold()
+                if series.director
+                else None
+            ),
+            "year": lambda series: series.year,
+            "runtime": lambda series: series.runtime,
+        }
+        field, _, direction = self.sort_order.partition("_")
+        if field not in sort_values:
+            return series_items
+        get_value = sort_values[field]
+        present = [
+            series for series in series_items
+            if get_value(series) is not None
+        ]
+        missing = [
+            series for series in series_items
+            if get_value(series) is None
+        ]
+        return sorted(
+            present,
+            key=get_value,
+            reverse=direction == "desc",
+        ) + missing
 
     def filter_by_genre(self, genre):
         self.selected_genre = genre
@@ -1429,12 +1664,55 @@ class MainWindow(QMainWindow):
                 for genre in (movie.genre or "").split(",")
             }:
                 continue
-            if search and search not in (movie.title or "").casefold():
+            if search and not (
+                search in (movie.title or "").casefold()
+                or search in (movie.director or "").casefold()
+            ):
                 continue
             filtered_movies.append(movie)
-        return filtered_movies
+        return self._sort_movies(filtered_movies)
+
+    def _sort_movies(self, movies):
+        sort_values = {
+            "director": lambda movie: (
+                movie.director.casefold()
+                if movie.director
+                else None
+            ),
+            "year": lambda movie: movie.year,
+            "runtime": lambda movie: movie.runtime,
+        }
+        field, _, direction = self.sort_order.partition("_")
+        if field not in sort_values:
+            return movies
+        get_value = sort_values[field]
+        descending = direction == "desc"
+        present = [
+            movie for movie in movies
+            if get_value(movie) is not None
+        ]
+        missing = [
+            movie for movie in movies
+            if get_value(movie) is None
+        ]
+        return sorted(
+            present,
+            key=get_value,
+            reverse=descending,
+        ) + missing
 
     def apply_filters(self):
+        has_filters = bool(
+            self.search_text
+            or self.selected_genre
+            or self.showing_favorites
+            or self.showing_unwatched
+            or self.sort_order != "title_asc"
+        )
+        if self.active_catalog == "series" or has_filters:
+            self.home_view.cancel_render()
+        if self.active_catalog == "movies" or has_filters:
+            self.series_view.grid.cancel_render()
         self.filtered_view.cancel_render()
         self.filter_timer.start(0)
 
@@ -1449,6 +1727,10 @@ class MainWindow(QMainWindow):
                 context_parts.append(
                     f"Búsqueda: «{self.search_text.strip()}»"
                 )
+            if self.showing_favorites:
+                context_parts.append("Favoritos")
+            if self.showing_unwatched:
+                context_parts.append("No vistas")
             self.series_view.set_context(
                 "Catálogo · " + " · ".join(context_parts)
                 if context_parts
@@ -1457,10 +1739,27 @@ class MainWindow(QMainWindow):
             self.header.movie_count.setText(
                 f"Series: {len(series_items)} de {len(self.series)}"
             )
+            if self.sort_order != "title_asc":
+                sort_labels = {
+                    "director_asc": "Director A–Z",
+                    "director_desc": "Director Z–A",
+                    "year_asc": "Año ascendente",
+                    "year_desc": "Año descendente",
+                    "runtime_asc": "Duración ascendente",
+                    "runtime_desc": "Duración descendente",
+                }
+                context_parts.append(
+                    f"Orden: {sort_labels.get(self.sort_order, self.sort_order)}"
+                )
+                self.series_view.set_context(
+                    "Catálogo · " + " · ".join(context_parts)
+                )
             self.series_view.render_series(
                 series_items,
                 get_user_setting("series_path"),
                 catalog_has_series=bool(self.series),
+                sort_order=self.sort_order,
+                selected_genre=self.selected_genre,
             )
             self.series_view.show_catalog()
             self._set_main_view(self.series_view)
@@ -1475,9 +1774,14 @@ class MainWindow(QMainWindow):
             and not self.showing_favorites
 
             and not self.showing_unwatched
+            and self.sort_order == "title_asc"
         )
 
         if use_home_view:
+            if self._home_view_dirty:
+                movies_path = get_user_setting("movies_path")
+                self.home_view.reload(self.movies, movies_path or "")
+                self._home_view_dirty = False
 
             self.header.movie_count.setText(
                 f"Películas: {len(self.movies)}"
@@ -1495,7 +1799,9 @@ class MainWindow(QMainWindow):
 
         self.filtered_view.render_movies(
             movies,
-            self.open_movie
+            self.open_movie,
+            self.sort_order,
+            self.selected_genre,
         )
         self._set_main_view(self.filtered_view)
 
@@ -1556,8 +1862,110 @@ class MainWindow(QMainWindow):
             return
 
         episodes = get_episodes_for_series(series_id, series_path)
+        self.selected_series_id = series_id
         self.series_view.show_detail(series, episodes)
         self._set_main_view(self.series_view)
+
+    def return_to_series_catalog(self):
+        self.apply_filters()
+
+    def refresh_series_metadata(self, series_id):
+        self.start_library_task(
+            "series_metadata_one",
+            series_id=series_id,
+        )
+
+    def update_series_favorite(self, series_id, is_favorite):
+        try:
+            is_favorite = set_series_favorite(series_id, is_favorite)
+        except (LookupError, RuntimeError, SQLAlchemyError) as error:
+            QMessageBox.critical(
+                self,
+                "No se pudo actualizar el favorito",
+                str(error),
+            )
+            return
+
+        for series in self.series:
+            if series.id == series_id:
+                series.favorite = is_favorite
+                break
+        for card in self.series_view.grid.cards:
+            if card.series_id == series_id:
+                card.update_favorite(is_favorite)
+        detail = self.series_view.detail
+        if detail.series and detail.series.id == series_id:
+            detail.update_favorite(is_favorite)
+        if (
+            self.active_catalog == "series"
+            and self.series_view.pages.currentWidget() is not detail
+        ):
+            self.apply_filters()
+
+    def update_series_watched(self, series_id, is_watched):
+        try:
+            is_watched = set_series_watched(series_id, is_watched)
+        except (LookupError, RuntimeError, SQLAlchemyError) as error:
+            QMessageBox.critical(
+                self,
+                "No se pudo actualizar el estado de la serie",
+                str(error),
+            )
+            return
+
+        for series in self.series:
+            if series.id == series_id:
+                series.watched = is_watched
+                break
+        for card in self.series_view.grid.cards:
+            if card.series_id == series_id:
+                card.update_watched(is_watched)
+        detail = self.series_view.detail
+        if (
+            detail.series
+            and detail.series.id == series_id
+            and self.series_view.pages.currentWidget() is detail
+        ):
+            self.load_movies(apply_filters=False)
+            self.open_series(series_id)
+            return
+        if detail.series and detail.series.id == series_id:
+            detail.update_watched(is_watched)
+        if (
+            self.active_catalog == "series"
+            and self.series_view.pages.currentWidget() is not detail
+        ):
+            self.apply_filters()
+
+    def update_episode_watched(self, episode_id, is_watched):
+        try:
+            set_episode_watched(episode_id, is_watched)
+        except (LookupError, RuntimeError, SQLAlchemyError) as error:
+            QMessageBox.critical(
+                self,
+                "No se pudo actualizar el capítulo",
+                str(error),
+            )
+            if self.selected_series_id is not None:
+                self.open_series(self.selected_series_id)
+            return
+        if self.selected_series_id is not None:
+            self.load_movies(apply_filters=False)
+            self.open_series(self.selected_series_id)
+
+    def update_season_watched(self, series_id, season, is_watched):
+        try:
+            set_season_watched(series_id, season, is_watched)
+        except (LookupError, RuntimeError, SQLAlchemyError) as error:
+            QMessageBox.critical(
+                self,
+                "No se pudo actualizar la temporada",
+                str(error),
+            )
+            self.open_series(series_id)
+            return
+        self.load_movies(apply_filters=False)
+        self.open_series(series_id)
 
     def update_movie_favorite(self, movie_id, is_favorite):
 

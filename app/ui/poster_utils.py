@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QPainter
 
 from config.runtime import APP_DIR, resolve_app_path
 
@@ -71,17 +71,14 @@ def _load_scaled_poster(path, modified_ns, width, height):
     scaled = source.scaled(
         width,
         height,
-        Qt.KeepAspectRatio,
+        Qt.KeepAspectRatioByExpanding,
         Qt.SmoothTransformation,
     )
-    canvas = QPixmap(width, height)
-    canvas.fill(QColor("#0e1113"))
+    x = (scaled.width() - width) // 2
+    y = (scaled.height() - height) // 2
+    canvas = scaled.copy(x, y, width, height)
     painter = QPainter(canvas)
-    painter.drawPixmap(
-        (width - scaled.width()) // 2,
-        (height - scaled.height()) // 2,
-        scaled,
-    )
+    painter.setRenderHint(QPainter.SmoothPixmapTransform)
     painter.end()
     return canvas
 

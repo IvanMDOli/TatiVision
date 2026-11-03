@@ -124,6 +124,10 @@ def _validate_settings(settings):
         raise RuntimeError(
             f"El reproductor configurado no es válido en {SETTINGS_PATH}."
         )
+    if settings.get("theme") not in ("dark", "light"):
+        raise RuntimeError(
+            f"El tema configurado no es válido en {SETTINGS_PATH}."
+        )
     if settings["player_mode"] == "custom" and not settings[
         "custom_player_path"
     ].strip():
