@@ -8,6 +8,9 @@ from PySide6.QtWidgets import (
     QListWidget,
     QScrollArea,
     QSizePolicy,
+    QStyle,
+    QStyleOptionViewItem,
+    QStyledItemDelegate,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -29,6 +32,13 @@ class DeleteLibraryButton(QToolButton):
     def leaveEvent(self, event):
         self.setIcon(load_ui_icon("delete", "#a83c43"))
         super().leaveEvent(event)
+
+
+class _GenreItemDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        option = QStyleOptionViewItem(option)
+        option.state &= ~QStyle.State_HasFocus
+        super().paint(painter, option, index)
 
 
 class LibraryPanel(QWidget):
@@ -217,6 +227,7 @@ class LibraryPanel(QWidget):
             if is_expanded and is_active:
                 genre_list = QListWidget()
                 genre_list.setObjectName("libraryGenreList")
+                genre_list.setItemDelegate(_GenreItemDelegate(genre_list))
                 genre_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
                 genre_list.setCursor(Qt.PointingHandCursor)
                 genre_list.addItem("Todos")

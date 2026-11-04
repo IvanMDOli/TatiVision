@@ -43,6 +43,7 @@ class FilteredView(QWidget):
         click_handler,
         sort_order="title_asc",
         selected_genre=None,
+        group_by_genre=True,
     ):
 
         self.movie_grid.render_movies(
@@ -50,6 +51,7 @@ class FilteredView(QWidget):
             click_handler,
             sort_order,
             selected_genre,
+            group_by_genre,
         )
 
     def set_context(self, text):

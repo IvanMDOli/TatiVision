@@ -14,6 +14,7 @@ APP_STYLESHEET = """
     }
     QFrame#genreSeparator {
         background-color: #252d32;
+        border-top: 1px solid #3B3B3B;
     }
     QDialog {
         background-color: #14181c;
@@ -81,7 +82,6 @@ APP_STYLESHEET = """
         selection-color: #00e054;
     }
     QComboBox#catalogSort {
-        min-height: 32px;
         padding: 2px 30px 2px 11px;
         border: 1px solid #39454b;
         border-radius: 6px;
@@ -231,7 +231,7 @@ APP_STYLESHEET = """
     QListWidget#libraryGenreList {
         background: transparent;
         border: none;
-        padding: 0 0 0 12px;
+        padding: 0;
     }
     QListWidget#libraryGenreList::item {
         padding: 6px 8px;

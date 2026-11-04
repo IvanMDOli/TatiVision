@@ -7,10 +7,8 @@ class LoadingOverlay(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._angle = 0
-        self.setStyleSheet(
-            "background-color: rgba(14, 17, 19, 190);"
-        )
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        self._background_color = QColor("#101417")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -26,6 +24,10 @@ class LoadingOverlay(QWidget):
         )
         layout.addWidget(label, alignment=Qt.AlignCenter)
         layout.addStretch()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), self._background_color)
 
 
 class Spinner(QWidget):

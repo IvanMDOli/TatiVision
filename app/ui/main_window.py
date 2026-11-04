@@ -68,6 +68,7 @@ from app.ui.theme import APP_STYLESHEET, apply_theme
 from app.ui.views.metadata_candidate_dialog import MetadataCandidateDialog
 from app.ui.views.settings_dialog import SettingsDialog
 from app.ui.icon_utils import load_ui_icon
+from app.ui.widgets.loading_spinner import LoadingOverlay
 from config.user_settings import (
     get_active_library,
     delete_library,
@@ -532,6 +533,8 @@ class MainWindow(QMainWindow):
         self.filter_timer = QTimer(self)
         self.filter_timer.setSingleShot(True)
         self.filter_timer.timeout.connect(self._apply_filters_now)
+        self._pending_render_view = None
+        self._view_before_loading = None
 
         central_widget = QWidget()
         central_widget.setObjectName("appCentral")
@@ -745,6 +748,12 @@ class MainWindow(QMainWindow):
         )
 
         self.filtered_view = FilteredView()
+        self.home_view.renderFinished.connect(
+            lambda: self._finish_view_render(self.home_view)
+        )
+        self.filtered_view.renderFinished.connect(
+            lambda: self._finish_view_render(self.filtered_view)
+        )
         self.movie_detail_view = MovieDetailWindow()
         self.movie_detail_view.backRequested.connect(
             self.close_movie_detail
@@ -761,6 +770,9 @@ class MainWindow(QMainWindow):
         self.movie_return_view = None
 
         self.series_view = SeriesCatalogView()
+        self.series_view.renderFinished.connect(
+            lambda: self._finish_view_render(self.series_view)
+        )
         self.series_view.seriesSelected.connect(
             self.open_series
         )
@@ -814,6 +826,8 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(
             self.movie_detail_view
         )
+        self.loading_view = LoadingOverlay()
+        self.stacked_widget.addWidget(self.loading_view)
 
         right_panel.addWidget(
             self.header
@@ -843,13 +857,8 @@ class MainWindow(QMainWindow):
         series_path = get_user_setting("series_path")
         self.movies = get_all_movies(movies_path) if movies_path else []
         self.series = get_all_series(series_path) if series_path else []
-        self.home_view.cancel_render()
-        self.series_view.grid.cancel_render()
-        self.filtered_view.cancel_render()
+        self._cancel_pending_view_render()
         self._home_view_dirty = True
-        if self.active_catalog == "movies":
-            self.home_view.reload(self.movies, movies_path or "")
-            self._home_view_dirty = False
         self.refresh_genres()
         self.refresh_library_buttons()
         if apply_filters:
@@ -862,7 +871,7 @@ class MainWindow(QMainWindow):
             return
 
         self.filter_timer.stop()
-        self.filtered_view.cancel_render()
+        self._cancel_pending_view_render(restore_view=True)
         dialog = SettingsDialog(self)
         self._settings_dialog = dialog
         dialog.themeChanged.connect(self._set_theme)
@@ -1029,10 +1038,6 @@ class MainWindow(QMainWindow):
     def switch_catalog(self, catalog):
 
         self.active_catalog = catalog
-        if catalog == "movies" and self._home_view_dirty:
-            movies_path = get_user_setting("movies_path")
-            self.home_view.reload(self.movies, movies_path or "")
-            self._home_view_dirty = False
         self.selected_genre = None
         self.showing_favorites = False
         self.showing_unwatched = False
@@ -1515,6 +1520,7 @@ class MainWindow(QMainWindow):
     def filter_movies(self, text):
 
         self.search_text = text
+        self._cancel_pending_view_render()
         self.filter_timer.start(140)
 
     def toggle_favorites(self):
@@ -1702,21 +1708,53 @@ class MainWindow(QMainWindow):
         ) + missing
 
     def apply_filters(self):
-        has_filters = bool(
-            self.search_text
-            or self.selected_genre
-            or self.showing_favorites
-            or self.showing_unwatched
-            or self.sort_order != "title_asc"
-        )
-        if self.active_catalog == "series" or has_filters:
-            self.home_view.cancel_render()
-        if self.active_catalog == "movies" or has_filters:
-            self.series_view.grid.cancel_render()
-        self.filtered_view.cancel_render()
+        self._cancel_pending_view_render()
         self.filter_timer.start(0)
 
+    def _cancel_pending_view_render(self, restore_view=False):
+        if self._pending_render_view is self.home_view:
+            self._home_view_dirty = True
+        self._pending_render_view = None
+        self.home_view.cancel_render()
+        self.series_view.grid.cancel_render()
+        self.filtered_view.cancel_render()
+
+        if restore_view and (
+            self.stacked_widget.currentWidget() is self.loading_view
+        ):
+            previous_view = self._view_before_loading
+            if previous_view is not None:
+                self.stacked_widget.setCurrentWidget(previous_view)
+            self._view_before_loading = None
+        elif self.stacked_widget.currentWidget() is not self.loading_view:
+            self._view_before_loading = None
+
+    def _render_view_when_ready(self, view, render):
+        if self.stacked_widget.currentWidget() is not self.loading_view:
+            self._view_before_loading = self.stacked_widget.currentWidget()
+        elif self._view_before_loading is None:
+            self._view_before_loading = self.home_view
+
+        self._pending_render_view = view
+        render()
+        if self._pending_render_view is view:
+            self.stacked_widget.setCurrentWidget(self.loading_view)
+
+    def _finish_view_render(self, view):
+        if self._pending_render_view is not view:
+            return
+        self._pending_render_view = None
+        self._view_before_loading = None
+        self._set_main_view(view)
+
     def _apply_filters_now(self):
+        has_other_filters = (
+            bool(self.search_text)
+            or bool(self.selected_genre)
+            or self.showing_favorites
+            or self.sort_order != "title_asc"
+        )
+        group_by_genre = not has_other_filters
 
         if self.active_catalog == "series":
             series_items = self.filter_series(self.series)
@@ -1731,14 +1769,6 @@ class MainWindow(QMainWindow):
                 context_parts.append("Favoritos")
             if self.showing_unwatched:
                 context_parts.append("No vistas")
-            self.series_view.set_context(
-                "Catálogo · " + " · ".join(context_parts)
-                if context_parts
-                else ""
-            )
-            self.header.movie_count.setText(
-                f"Series: {len(series_items)} de {len(self.series)}"
-            )
             if self.sort_order != "title_asc":
                 sort_labels = {
                     "director_asc": "Director A–Z",
@@ -1751,28 +1781,33 @@ class MainWindow(QMainWindow):
                 context_parts.append(
                     f"Orden: {sort_labels.get(self.sort_order, self.sort_order)}"
                 )
-                self.series_view.set_context(
-                    "Catálogo · " + " · ".join(context_parts)
-                )
-            self.series_view.render_series(
-                series_items,
-                get_user_setting("series_path"),
-                catalog_has_series=bool(self.series),
-                sort_order=self.sort_order,
-                selected_genre=self.selected_genre,
+            self.series_view.set_context(
+                "Catálogo · " + " · ".join(context_parts)
+                if context_parts
+                else ""
             )
-            self.series_view.show_catalog()
-            self._set_main_view(self.series_view)
+            self.header.movie_count.setText(
+                f"Series: {len(series_items)} de {len(self.series)}"
+            )
+
+            def render_series():
+                self.series_view.render_series(
+                    series_items,
+                    get_user_setting("series_path"),
+                    catalog_has_series=bool(self.series),
+                    sort_order=self.sort_order,
+                    selected_genre=self.selected_genre,
+                    group_by_genre=group_by_genre,
+                )
+                self.series_view.show_catalog()
+
+            self._render_view_when_ready(self.series_view, render_series)
             return
 
         use_home_view = (
-
             not self.search_text
-
             and not self.selected_genre
-
             and not self.showing_favorites
-
             and not self.showing_unwatched
             and self.sort_order == "title_asc"
         )
@@ -1780,8 +1815,15 @@ class MainWindow(QMainWindow):
         if use_home_view:
             if self._home_view_dirty:
                 movies_path = get_user_setting("movies_path")
-                self.home_view.reload(self.movies, movies_path or "")
                 self._home_view_dirty = False
+                self._render_view_when_ready(
+                    self.home_view,
+                    lambda: self.home_view.reload(
+                        self.movies,
+                        movies_path or "",
+                    ),
+                )
+                return
 
             self.header.movie_count.setText(
                 f"Películas: {len(self.movies)}"
@@ -1797,13 +1839,16 @@ class MainWindow(QMainWindow):
             f"Películas: {len(movies)} de {len(self.movies)}"
         )
 
-        self.filtered_view.render_movies(
-            movies,
-            self.open_movie,
-            self.sort_order,
-            self.selected_genre,
+        self._render_view_when_ready(
+            self.filtered_view,
+            lambda: self.filtered_view.render_movies(
+                movies,
+                self.open_movie,
+                self.sort_order,
+                self.selected_genre,
+                group_by_genre=group_by_genre,
+            ),
         )
-        self._set_main_view(self.filtered_view)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1833,6 +1878,9 @@ class MainWindow(QMainWindow):
         )
 
     def _set_main_view(self, view):
+        if view is not self.loading_view:
+            self._pending_render_view = None
+            self._view_before_loading = None
         self.stacked_widget.setCurrentWidget(view)
 
     def close_movie_detail(self):

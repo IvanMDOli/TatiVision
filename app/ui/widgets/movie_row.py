@@ -1,4 +1,6 @@
-from PySide6.QtCore import Qt, QTimer, Signal
+from itertools import chain
+
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, Signal
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -17,7 +19,12 @@ from app.ui.widgets.series_card import SeriesCard
 from app.ui.theme import apply_theme, get_current_theme
 
 
-def group_catalog_items(items, sort_order="title_asc", selected_genre=None):
+def group_catalog_items(
+    items,
+    sort_order="title_asc",
+    selected_genre=None,
+    group_by_genre=True,
+):
     field, _, direction = sort_order.partition("_")
     groups = {}
     if field == "director":
@@ -41,6 +48,9 @@ def group_catalog_items(items, sort_order="title_asc", selected_genre=None):
 
     if selected_genre:
         return [(selected_genre, list(items))]
+
+    if not group_by_genre:
+        return [("Resultados", list(items))] if items else []
 
     for item in items:
         genres = [
@@ -116,7 +126,8 @@ class MovieRow(QWidget):
             self.title_label
         )
 
-        self.card_step = MovieCard.CARD_WIDTH + 13
+        scale = MovieCard.CARD_SCALE
+        self.card_step = MovieCard.CARD_WIDTH + round(13 * scale)
 
         self.scroll = QScrollArea()
         self.scroll.setStyleSheet(
@@ -139,8 +150,17 @@ class MovieRow(QWidget):
         self.scroll.setVerticalScrollBarPolicy(
             Qt.ScrollBarAlwaysOff
         )
+        self._scroll_animation = QPropertyAnimation(
+            self.scroll.horizontalScrollBar(),
+            b"value",
+            self,
+        )
+        self._scroll_animation.setDuration(300)
+        self._scroll_animation.setEasingCurve(QEasingCurve.OutCubic)
 
-        self.scroll.setFixedHeight(405)
+        self.scroll.setFixedHeight(
+            round((MovieCard.CARD_HEIGHT + 31 * scale))
+        )
 
         self.container = QWidget()
         self.container.setObjectName("catalogRowCards")
@@ -148,9 +168,14 @@ class MovieRow(QWidget):
         self.container.setStyleSheet("background: transparent;")
 
         self.row_layout = QHBoxLayout(self.container)
-        self.row_layout.setContentsMargins(13, 8, 13, 8)
+        self.row_layout.setContentsMargins(
+            round(13 * scale),
+            round(8 * scale),
+            round(13 * scale),
+            round(8 * scale),
+        )
 
-        self.row_layout.setSpacing(13)
+        self.row_layout.setSpacing(round(13 * scale))
 
         self.row_layout.setAlignment(
             Qt.AlignLeft
@@ -271,7 +296,17 @@ class MovieRow(QWidget):
         self.container.adjustSize()
         self._update_container_size()
         self.update_arrows()
-        self._render_timer.start()
+        try:
+            next_item = next(self._pending_items)
+        except StopIteration:
+            self._render_timer.stop()
+            self.renderFinished.emit()
+        else:
+            self._pending_items = chain(
+                (next_item,),
+                self._pending_items,
+            )
+            self._render_timer.start()
 
     def _update_container_size(self):
         margins = self.row_layout.contentsMargins()
@@ -359,15 +394,16 @@ class MovieRow(QWidget):
     def scroll_right(self):
 
         bar = self.scroll.horizontalScrollBar()
-
-        bar.setValue(
-            bar.value() + self.card_step
-        )
+        self._animate_scroll(min(bar.value() + self.card_step, bar.maximum()))
 
     def scroll_left(self):
 
         bar = self.scroll.horizontalScrollBar()
+        self._animate_scroll(max(bar.value() - self.card_step, bar.minimum()))
 
-        bar.setValue(
-            bar.value() - self.card_step
-        )
+    def _animate_scroll(self, target):
+        animation = self._scroll_animation
+        animation.stop()
+        animation.setStartValue(self.scroll.horizontalScrollBar().value())
+        animation.setEndValue(target)
+        animation.start()

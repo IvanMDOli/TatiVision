@@ -3,9 +3,8 @@ import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
+from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPainter
 
 from config.runtime import APP_DIR, resolve_app_path
 
@@ -76,11 +75,7 @@ def _load_scaled_poster(path, modified_ns, width, height):
     )
     x = (scaled.width() - width) // 2
     y = (scaled.height() - height) // 2
-    canvas = scaled.copy(x, y, width, height)
-    painter = QPainter(canvas)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform)
-    painter.end()
-    return canvas
+    return scaled.copy(QRect(x, y, width, height))
 
 
 def load_scaled_poster(poster_path, title, width, height):

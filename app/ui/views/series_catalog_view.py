@@ -12,6 +12,7 @@ class SeriesCatalogView(QWidget):
     backRequested = Signal()
     favoriteChanged = Signal(int, bool)
     watchedChanged = Signal(int, bool)
+    renderFinished = Signal()
 
     def __init__(self):
 
@@ -35,6 +36,7 @@ class SeriesCatalogView(QWidget):
         )
         self.grid.favoriteChanged.connect(self.favoriteChanged.emit)
         self.grid.watchedChanged.connect(self.watchedChanged.emit)
+        self.grid.renderFinished.connect(self.renderFinished.emit)
         self.detail.backRequested.connect(
             self.backRequested.emit
         )
@@ -51,12 +53,14 @@ class SeriesCatalogView(QWidget):
         catalog_has_series=False,
         sort_order="title_asc",
         selected_genre=None,
+        group_by_genre=True,
     ):
 
         self.grid.render_series(
             series_items,
             sort_order,
             selected_genre,
+            group_by_genre,
         )
         if not series_items:
             if catalog_has_series:

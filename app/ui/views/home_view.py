@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStackedWidget,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 
 from app.ui.widgets.movie_row import (
     MovieRow,
@@ -18,6 +18,7 @@ class HomeView(QWidget):
 
     favoriteChanged = Signal(int, bool)
     watchedChanged = Signal(int, bool)
+    renderFinished = Signal()
 
     def __init__(
         self,
@@ -36,6 +37,12 @@ class HomeView(QWidget):
         )
         self.click_handler = click_handler
         self.rows = []
+        self._pending_rows = 0
+        self._rows_to_start = []
+        self._next_row_to_start = 0
+        self._row_start_timer = QTimer(self)
+        self._row_start_timer.setInterval(1)
+        self._row_start_timer.timeout.connect(self._start_next_row)
 
         self.pages = QStackedWidget()
         self.empty_state = EmptyStateView()
@@ -66,6 +73,7 @@ class HomeView(QWidget):
         main_layout.addWidget(self.pages)
 
     def reload(self, movies, root_path):
+        self.cancel_render()
 
         while self.content_layout.count():
             item = self.content_layout.takeAt(0)
@@ -77,8 +85,8 @@ class HomeView(QWidget):
 
         self.rows = []
 
-        grouped = dict(group_catalog_items(movies))
-        if not grouped:
+        grouped_items = group_catalog_items(movies)
+        if not grouped_items:
             if root_path:
                 self.empty_state.set_content(
                     "No se encontraron películas",
@@ -92,15 +100,17 @@ class HomeView(QWidget):
                     "Abrí Ajustes para elegir la carpeta raíz de tu biblioteca.",
                 )
             self.pages.setCurrentWidget(self.empty_state)
+            self.renderFinished.emit()
             return
 
-        for index, (genre, movies) in enumerate(sorted(grouped.items())):
+        total_cards = sum(len(items) for _, items in grouped_items)
+        for index, (genre, genre_movies) in enumerate(grouped_items):
             if index:
                 self.content_layout.addWidget(catalog_separator())
 
             row = MovieRow(
                 genre,
-                movies,
+                genre_movies,
                 self.click_handler
             )
 
@@ -114,11 +124,36 @@ class HomeView(QWidget):
             row.watchedChanged.connect(
                 self.watchedChanged.emit
             )
+            row.renderFinished.connect(self._row_rendered)
 
-        for row in self.rows:
-            row.start_render()
+        self._pending_rows = len(self.rows)
+        if total_cards > 8:
+            self._rows_to_start = self.rows.copy()
+            self._next_row_to_start = 0
+            self._row_start_timer.start()
+        else:
+            for row in self.rows:
+                row.start_render()
         self.content_layout.addStretch()
         self.pages.setCurrentIndex(0)
+
+    def _row_rendered(self):
+        self._pending_rows -= 1
+        if self._pending_rows == 0:
+            self.renderFinished.emit()
+
+    def _start_next_row(self):
+        if self._next_row_to_start >= len(self._rows_to_start):
+            self._row_start_timer.stop()
+            self._rows_to_start = []
+            return
+
+        row = self._rows_to_start[self._next_row_to_start]
+        self._next_row_to_start += 1
+        row.start_render()
+        if self._next_row_to_start >= len(self._rows_to_start):
+            self._row_start_timer.stop()
+            self._rows_to_start = []
 
     def update_movie_favorite(self, movie_id, is_favorite):
 
@@ -137,5 +172,9 @@ class HomeView(QWidget):
             )
 
     def cancel_render(self):
+        self._row_start_timer.stop()
+        self._rows_to_start = []
+        self._next_row_to_start = 0
+        self._pending_rows = 0
         for row in self.rows:
             row.cancel_render()

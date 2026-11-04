@@ -108,7 +108,7 @@ class CastWidget(QWidget):
             card.setToolTip(character)
 
             name_label = QLabel(name, card)
-            name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            name_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             font = name_label.font()
             font.setPointSize(10)
             font.setWeight(QFont.DemiBold)
@@ -119,10 +119,10 @@ class CastWidget(QWidget):
             name_label.setFixedSize(text_width, 23)
             name_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             chip_layout = QHBoxLayout(card)
-            chip_layout.setContentsMargins(2, 0, 2, 0)
+            chip_layout.setContentsMargins(8, 0, 8, 0)
             chip_layout.setSpacing(0)
             chip_layout.addWidget(name_label)
-            card.setFixedWidth(text_width + 4)
+            card.setFixedWidth(text_width + 16)
             self.flow_layout.addWidget(card)
             self.member_cards.append(card)
 
@@ -150,7 +150,7 @@ class CastWidget(QWidget):
             label = card.findChild(QLabel)
             if label:
                 label.setStyleSheet(
-                    "border: none; background: transparent; color: #ffffff;"
+                    "border: none; background: transparent; color: #BCBCBC;"
                 )
 
     @staticmethod
