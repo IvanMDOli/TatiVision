@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from app.ui.icon_utils import load_ui_icon
 from app.ui.poster_utils import load_poster
 from app.ui.widgets.cast_widget import CastWidget
+from app.ui.widgets.detail_back_button import DetailBackButton
 from app.ui.theme import apply_theme, get_current_theme
 from app.vlc.player import play_movie
 
@@ -38,14 +39,32 @@ class SeriesDetailView(QWidget):
         self.progress_label = None
 
         self.setObjectName("seriesDetailView")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet("""
             QWidget#seriesDetailView {
                 background-color: #101417;
                 color: #f2f2f2;
             }
+            QWidget#seriesDetailContent {
+                background-color: #101417;
+            }
+            QLabel {
+                background: transparent;
+            }
             QScrollArea {
                 border: none;
                 background: transparent;
+            }
+            QPushButton {
+                color: #f2f2f2;
+                background-color: #20272c;
+                border: 1px solid #39434a;
+                border-radius: 6px;
+                padding: 8px 14px;
+            }
+            QPushButton:hover {
+                background-color: #2c373e;
+                border-color: #00e054;
             }
             QCheckBox {
                 spacing: 6px;
@@ -70,27 +89,25 @@ class SeriesDetailView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.back_button = QPushButton("←  Volver al catálogo")
-        self.back_button.setCursor(Qt.PointingHandCursor)
-        self.back_button.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                background: transparent;
-                border: none;
-                padding: 12px 18px;
-                color: #c9d1d9;
-                font-size: 14px;
-            }
-            QPushButton:hover { color: #00e054; }
-        """)
+        back_row = QHBoxLayout()
+        back_row.setContentsMargins(26, 14, 26, 0)
+        back_row.setSpacing(0)
+        self.back_button = DetailBackButton()
+        self.back_button.setObjectName("backButton")
         self.back_button.clicked.connect(self.backRequested.emit)
-        layout.addWidget(self.back_button, alignment=Qt.AlignLeft)
+        back_row.addWidget(self.back_button, alignment=Qt.AlignLeft)
+        back_row.addStretch()
+        layout.addLayout(back_row)
 
         content = QWidget()
+        content.setObjectName("seriesDetailContent")
         self.content_layout = QVBoxLayout(content)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self.scroll_area.viewport().setStyleSheet(
+            "background-color: #101417;"
+        )
         self.scroll_area.setWidget(content)
         self.content_layout.setContentsMargins(26, 14, 26, 30)
         self.content_layout.setSpacing(14)
@@ -140,7 +157,8 @@ class SeriesDetailView(QWidget):
         information.setSpacing(10)
         eyebrow = QLabel("FICHA DE SERIE")
         eyebrow.setStyleSheet(
-            "color: #00e054; font-size: 11px; font-weight: 700; "
+            "background: transparent; color: #00e054; font-size: 11px; "
+            "font-weight: 700; "
             "letter-spacing: 1px;"
         )
         information_header = QHBoxLayout()
@@ -154,12 +172,15 @@ class SeriesDetailView(QWidget):
         self.metadata_button.setToolTip(
             "Volver a consultar TMDb y corregir los metadatos de esta serie"
         )
+        self._style_detail_button(self.metadata_button)
         self.metadata_button.clicked.connect(self.request_metadata_refresh)
         information_header.addWidget(self.metadata_button)
         information.addLayout(information_header)
 
         title = QLabel(series.title or "Serie sin título")
-        title.setStyleSheet("font-size: 32px; font-weight: 700;")
+        title.setStyleSheet(
+            "background: transparent; font-size: 32px; font-weight: 700;"
+        )
         title.setWordWrap(True)
         information.addWidget(title)
 
@@ -170,35 +191,45 @@ class SeriesDetailView(QWidget):
             metadata_parts.append(f"{series.runtime} min/episodio")
         if metadata_parts:
             metadata = QLabel("  ·  ".join(metadata_parts))
-            metadata.setStyleSheet("color: #aab4ba; font-size: 14px;")
+            metadata.setStyleSheet(
+                "background: transparent; color: #aab4ba; font-size: 14px;"
+            )
             information.addWidget(metadata)
 
         genres = QLabel(series.genre or "Género desconocido")
-        genres.setStyleSheet("color: #00c94b; font-size: 13px;")
+        genres.setStyleSheet(
+            "background: transparent; color: #00c94b; font-size: 13px;"
+        )
         genres.setWordWrap(True)
         information.addWidget(genres)
 
         if series.director:
             creator = QLabel(f"Creada por  ·  {series.director}")
             creator.setWordWrap(True)
-            creator.setStyleSheet("color: #d1d7da; font-size: 14px;")
+            creator.setStyleSheet(
+                "background: transparent; color: #d1d7da; font-size: 14px;"
+            )
             information.addWidget(creator)
 
         overview_heading = QLabel("SINOPSIS")
         overview_heading.setStyleSheet(
-            "color: #89949b; font-size: 11px; font-weight: 700; "
+            "background: transparent; color: #89949b; font-size: 11px; "
+            "font-weight: 700; "
             "letter-spacing: 1px;"
         )
         information.addWidget(overview_heading)
 
         overview = QLabel(series.overview or "Sin sinopsis disponible.")
         overview.setWordWrap(True)
-        overview.setStyleSheet("color: #d5dbde; font-size: 14px;")
+        overview.setStyleSheet(
+            "background: transparent; color: #d5dbde; font-size: 14px;"
+        )
         information.addWidget(overview)
 
         cast_heading = QLabel("REPARTO")
         cast_heading.setStyleSheet(
-            "color: #89949b; font-size: 11px; font-weight: 700; "
+            "background: transparent; color: #89949b; font-size: 11px; "
+            "font-weight: 700; "
             "letter-spacing: 1px;"
         )
         information.addWidget(cast_heading)
@@ -209,12 +240,14 @@ class SeriesDetailView(QWidget):
         self.favorite_button = QPushButton()
         self.favorite_button.setIconSize(QSize(18, 18))
         self.favorite_button.setCursor(Qt.PointingHandCursor)
+        self._style_detail_button(self.favorite_button)
         self.favorite_button.clicked.connect(self.toggle_favorite)
         actions.addWidget(self.favorite_button)
 
         self.watched_button = QPushButton()
         self.watched_button.setIconSize(QSize(18, 18))
         self.watched_button.setCursor(Qt.PointingHandCursor)
+        self._style_detail_button(self.watched_button)
         self.watched_button.clicked.connect(self.toggle_watched)
         actions.addWidget(self.watched_button)
 
@@ -246,7 +279,7 @@ class SeriesDetailView(QWidget):
         self.progress_label.setMinimumWidth(132)
         self.progress_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.progress_label.setStyleSheet(
-            "color: #9ca7ac; font-size: 11px;"
+            "background: transparent; color: #9ca7ac; font-size: 11px;"
         )
         progress_row.addWidget(self.progress_bar, 1)
         progress_row.addWidget(self.progress_label)
@@ -255,7 +288,8 @@ class SeriesDetailView(QWidget):
 
         episodes_heading = QLabel(f"CAPÍTULOS  ·  {len(episodes)}")
         episodes_heading.setStyleSheet(
-            "color: #cbd2d6; font-size: 13px; font-weight: 700; "
+            "background: transparent; color: #cbd2d6; font-size: 13px; "
+            "font-weight: 700; "
             "letter-spacing: 1px;"
         )
         self.content_layout.addWidget(episodes_heading)
@@ -289,7 +323,8 @@ class SeriesDetailView(QWidget):
 
             season_title = QLabel(f"Temporada {season_number}")
             season_title.setStyleSheet(
-                "font-size: 18px; font-weight: 700; color: #f2f4f5; "
+                "background: transparent; font-size: 18px; "
+                "font-weight: 700; color: #f2f4f5; "
                 "padding: 4px 0;"
             )
             season_row.addWidget(season_title)
@@ -402,6 +437,22 @@ class SeriesDetailView(QWidget):
         self.progress_label.setText(
             f"{watched}/{total} capítulos · {percent}%"
         )
+
+    @staticmethod
+    def _style_detail_button(button):
+        button.setStyleSheet("""
+            QPushButton {
+                color: #f2f2f2;
+                background-color: #20272c;
+                border: 1px solid #39434a;
+                border-radius: 6px;
+                padding: 8px 14px;
+            }
+            QPushButton:hover {
+                background-color: #2c373e;
+                border-color: #00e054;
+            }
+        """)
 
     def _clear_content(self):
         while self.content_layout.count():

@@ -1,4 +1,4 @@
-from PySide6.QtCore import QRectF, QTimer, Qt
+from PySide6.QtCore import QEvent, QRectF, QTimer, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
@@ -24,6 +24,23 @@ class LoadingOverlay(QWidget):
         )
         layout.addWidget(label, alignment=Qt.AlignCenter)
         layout.addStretch()
+        self._geometry_parent = None
+
+    def attach_to(self, parent):
+        if self._geometry_parent is not None:
+            self._geometry_parent.removeEventFilter(self)
+        self.setParent(parent)
+        self._geometry_parent = parent
+        parent.installEventFilter(self)
+        self.setGeometry(parent.rect())
+
+    def eventFilter(self, watched, event):
+        if (
+            watched is self._geometry_parent
+            and event.type() == QEvent.Resize
+        ):
+            self.setGeometry(watched.rect())
+        return super().eventFilter(watched, event)
 
     def paintEvent(self, event):
         painter = QPainter(self)

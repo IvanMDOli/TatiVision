@@ -229,7 +229,7 @@ APP_STYLESHEET = """
         font-size: 11px;
     }
     QListWidget#libraryGenreList {
-        background: transparent;
+        background-color: #101417;
         border: none;
         padding: 0;
     }

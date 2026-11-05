@@ -9,6 +9,7 @@ def layout_fixed_cards(
     previous_columns,
     max_columns=6,
 ):
+    grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
     margins = grid_layout.contentsMargins()
     spacing = grid_layout.horizontalSpacing()
     available_width = viewport_width - margins.left() - margins.right()
@@ -30,7 +31,6 @@ def layout_fixed_cards(
             ]
             if positions == expected:
                 grid_layout.activate()
-                _position_cards(grid_layout, cards, columns, card_width, spacing)
                 return columns
         elif existing_count < len(cards):
             positions = [
@@ -47,10 +47,9 @@ def layout_fixed_cards(
                         cards[index],
                         index // columns,
                         index % columns,
-                        alignment=Qt.AlignCenter,
+                        alignment=Qt.AlignLeft | Qt.AlignTop,
                     )
                 grid_layout.activate()
-                _position_cards(grid_layout, cards, columns, card_width, spacing)
                 return columns
 
     while grid_layout.count():
@@ -61,29 +60,8 @@ def layout_fixed_cards(
             card,
             index // columns,
             index % columns,
-            alignment=Qt.AlignCenter,
+            alignment=Qt.AlignLeft | Qt.AlignTop,
         )
 
     grid_layout.activate()
-    _position_cards(grid_layout, cards, columns, card_width, spacing)
     return columns
-
-
-def _position_cards(grid_layout, cards, columns, card_width, spacing):
-    parent = grid_layout.parentWidget()
-    margins = grid_layout.contentsMargins()
-    available_width = parent.width() - margins.left() - margins.right()
-    cell_width = (
-        available_width - (columns - 1) * spacing
-    ) // columns
-
-    for index, card in enumerate(cards):
-        column = index % columns
-        row = index // columns
-        x = (
-            margins.left()
-            + column * (cell_width + spacing)
-            + max(0, (cell_width - card_width) // 2)
-        )
-        y = margins.top() + row * (card.height() + spacing)
-        card.setGeometry(x, y, card_width, card.height())

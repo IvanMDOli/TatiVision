@@ -122,7 +122,7 @@ class CastWidget(QWidget):
             chip_layout.setContentsMargins(8, 0, 8, 0)
             chip_layout.setSpacing(0)
             chip_layout.addWidget(name_label)
-            card.setFixedWidth(text_width + 16)
+            card.setFixedWidth(text_width + 18)
             self.flow_layout.addWidget(card)
             self.member_cards.append(card)
 

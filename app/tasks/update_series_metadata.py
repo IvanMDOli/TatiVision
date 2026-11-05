@@ -34,6 +34,7 @@ def run(root_path=None, force_update=False, cancel_event=None):
                 series.title,
                 [episode.season for episode in episodes],
                 cancel_event=cancel_event,
+                tmdb_id=series.tmdb_id,
             )
             if cancel_event and cancel_event.is_set():
                 break

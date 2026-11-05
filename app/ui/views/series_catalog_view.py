@@ -1,4 +1,4 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
 
 from app.ui.views.empty_state_view import EmptyStateView
@@ -18,9 +18,18 @@ class SeriesCatalogView(QWidget):
 
         super().__init__()
 
+        self.setObjectName("seriesCatalogView")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QWidget#seriesCatalogView {
+                background-color: #101417;
+            }
+        """)
         layout = QVBoxLayout(self)
         self.pages = QStackedWidget()
         self.grid = SeriesGrid()
+        self.scroll_area = self.grid.scroll_area
+        self._catalog_has_series = False
         self.context_label = self.grid.context_label
         self.detail = SeriesDetailView()
         self.empty_state = EmptyStateView()
@@ -56,6 +65,7 @@ class SeriesCatalogView(QWidget):
         group_by_genre=True,
     ):
 
+        self._catalog_has_series = bool(series_items)
         self.grid.render_series(
             series_items,
             sort_order,
@@ -97,5 +107,5 @@ class SeriesCatalogView(QWidget):
 
         self.context_label.setVisible(bool(self.context_label.text()))
         self.pages.setCurrentWidget(
-            self.grid if self.grid.cards else self.empty_state
+            self.grid if self._catalog_has_series else self.empty_state
         )

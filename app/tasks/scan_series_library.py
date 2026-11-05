@@ -1,6 +1,7 @@
 from app.metadata.tmdb import enrich_series
 from app.scanner.series_scanner import scan_series
 from app.services.series_service import (
+    get_series_by_id,
     sync_series,
     update_series_metadata,
 )
@@ -32,6 +33,7 @@ def run(root_path=None, update_metadata=True, cancel_event=None):
 
         if update_metadata and not (cancel_event and cancel_event.is_set()):
             try:
+                series = get_series_by_id(series_id)
                 metadata = enrich_series(
                     series_data["title"],
                     [
@@ -39,6 +41,7 @@ def run(root_path=None, update_metadata=True, cancel_event=None):
                         for episode in series_data["episodes"]
                     ],
                     cancel_event=cancel_event,
+                    tmdb_id=series.tmdb_id if series else None,
                 )
                 if cancel_event and cancel_event.is_set():
                     break

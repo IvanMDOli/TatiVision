@@ -45,11 +45,12 @@ def _tmdb_get(endpoint, params=None):
     return response.json()
 
 
-def enrich_series(title, seasons, cancel_event=None):
+def enrich_series(title, seasons, cancel_event=None, tmdb_id=None):
     return enrich_series_with_id(
         title,
         seasons,
         cancel_event=cancel_event,
+        tmdb_id=tmdb_id,
     )
 
 

@@ -1,4 +1,5 @@
 from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -6,6 +7,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -16,6 +18,7 @@ from app.services.movie_service import (
 )
 from app.ui.poster_utils import load_poster
 from app.ui.icon_utils import load_ui_icon
+from app.ui.widgets.detail_back_button import DetailBackButton
 from app.ui.widgets.cast_widget import CastWidget
 from app.ui.theme import apply_theme, get_current_theme
 from app.vlc.player import play_movie
@@ -32,10 +35,13 @@ class MovieDetailWindow(QWidget):
 
         super().__init__(parent)
         self.movie = None
+        self._overlay_color = QColor("#101417")
+        self._overlay_color.setAlpha(128)
         self.setObjectName("movieDetailView")
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_StyledBackground, False)
         self.setStyleSheet("""
             QWidget#movieDetailView {
-                background-color: #14181c;
                 color: #f2f2f2;
             }
             QLabel {
@@ -62,33 +68,44 @@ class MovieDetailWindow(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        self.back_button = QPushButton("←  Volver al catálogo")
+        back_row = QHBoxLayout()
+        back_row.setContentsMargins(26, 14, 26, 0)
+        back_row.setSpacing(0)
+        self.back_button = DetailBackButton()
         self.back_button.setObjectName("backButton")
-        self.back_button.setCursor(Qt.PointingHandCursor)
-        self.back_button.setStyleSheet("""
-            QPushButton#backButton {
-                text-align: left;
-                background: transparent;
-                border: none;
-                padding: 12px 18px;
-                color: #c9d1d9;
-                font-size: 14px;
-            }
-            QPushButton#backButton:hover {
-                color: #00e054;
-            }
-        """)
         self.back_button.clicked.connect(self.backRequested.emit)
-        outer_layout.addWidget(self.back_button, alignment=Qt.AlignLeft)
+        back_row.addWidget(self.back_button, alignment=Qt.AlignLeft)
+        back_row.addStretch()
+        outer_layout.addLayout(back_row)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.viewport().setAttribute(
+            Qt.WA_TranslucentBackground
+        )
+        self.scroll_area.setStyleSheet(
+            "QScrollArea { border: none; background: transparent; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
         content = QWidget()
+        content.setAttribute(Qt.WA_TranslucentBackground)
+        content.setStyleSheet("background: transparent;")
         self.content_layout = QVBoxLayout(content)
         self.content_layout.setContentsMargins(26, 14, 26, 30)
         self.content_layout.setSpacing(20)
         self.scroll_area.setWidget(content)
         outer_layout.addWidget(self.scroll_area)
+
+    def apply_color_theme(self, theme):
+        self._overlay_color = QColor(
+            "#f4f6f5" if theme == "light" else "#101417"
+        )
+        self._overlay_color.setAlpha(128)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), self._overlay_color)
 
     def show_movie(self, movie):
 
@@ -104,6 +121,10 @@ class MovieDetailWindow(QWidget):
                 border-radius: 12px;
             }
         """)
+        hero.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Expanding,
+        )
         hero_layout = QHBoxLayout(hero)
         hero_layout.setContentsMargins(22, 22, 22, 22)
         hero_layout.setSpacing(26)
@@ -243,7 +264,7 @@ class MovieDetailWindow(QWidget):
 
         details.addLayout(actions)
         hero_layout.addLayout(details, 1)
-        self.content_layout.addWidget(hero)
+        self.content_layout.addWidget(hero, 1)
 
         self.update_favorite_button()
         self.update_watched_button()
