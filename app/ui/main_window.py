@@ -30,12 +30,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.services.movie_service import (
     delete_movies_by_ids,
     get_all_movies,
-    get_all_genres,
-    get_movie_by_id
+    get_movie_by_id,
 )
 from app.services.series_service import (
     get_all_series,
-    get_all_series_genres,
     get_episodes_for_series,
     get_series_by_id,
     set_episode_watched,
@@ -998,12 +996,17 @@ class MainWindow(QMainWindow):
             self.library_panel.setEnabled(True)
 
     def refresh_genres(self):
-        if self.active_catalog == "movies":
-            movies_path = get_user_setting("movies_path")
-            genres = get_all_genres(movies_path) if movies_path else []
-        else:
-            series_path = get_user_setting("series_path")
-            genres = get_all_series_genres(series_path) if series_path else []
+        catalog_items = (
+            self.movies
+            if self.active_catalog == "movies"
+            else self.series
+        )
+        genres = sorted({
+            genre.strip()
+            for item in catalog_items
+            for genre in (item.genre or "").split(",")
+            if genre.strip()
+        })
 
         if (
             self.selected_genre

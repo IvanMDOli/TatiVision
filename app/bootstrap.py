@@ -13,9 +13,10 @@ def initialize_database():
 
     Base.metadata.create_all(engine)
 
+    inspector = inspect(engine)
     movie_columns = {
         column["name"]
-        for column in inspect(engine).get_columns("movies")
+        for column in inspector.get_columns("movies")
     }
     if "watched" not in movie_columns:
         with engine.begin() as connection:
@@ -26,7 +27,7 @@ def initialize_database():
 
     series_columns = {
         column["name"]
-        for column in inspect(engine).get_columns("series")
+        for column in inspector.get_columns("series")
     }
     with engine.begin() as connection:
         if "genre" not in series_columns:
@@ -64,10 +65,6 @@ def initialize_database():
                 "ALTER TABLE series ADD COLUMN cast_members TEXT"
             )
 
-    movie_columns = {
-        column["name"]
-        for column in inspect(engine).get_columns("movies")
-    }
     if "cast_members" not in movie_columns:
         with engine.begin() as connection:
             connection.exec_driver_sql(
@@ -76,7 +73,7 @@ def initialize_database():
 
     episode_columns = {
         column["name"]
-        for column in inspect(engine).get_columns("episodes")
+        for column in inspector.get_columns("episodes")
     }
     if "watched" not in episode_columns:
         with engine.begin() as connection:

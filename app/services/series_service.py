@@ -1,5 +1,7 @@
 import json
 
+from sqlalchemy import Integer, cast, func
+
 from app.models.database import SessionLocal
 from app.models.episode import Episode
 from app.models.series import Series
@@ -30,20 +32,6 @@ def get_all_series(root_path=None):
         ]
     finally:
         session.close()
-
-
-def get_all_series_genres(root_path=None):
-
-    genres = set()
-    for series in get_all_series(root_path):
-        if series.genre:
-            genres.update(
-                genre.strip()
-                for genre in series.genre.split(",")
-                if genre.strip()
-            )
-
-    return sorted(genres)
 
 
 def get_series_for_metadata(root_path=None, force_update=False):
@@ -129,15 +117,21 @@ def sync_series(series_data):
             session.add(series)
             session.flush()
 
-        for episode_data in series_data["episodes"]:
-            episode = (
+        existing_episodes = {}
+        if series_data["episodes"]:
+            for episode in (
                 session.query(Episode)
-                .filter_by(
-                    series_id=series.id,
-                    season=episode_data["season"],
-                    episode=episode_data["episode"],
+                .filter_by(series_id=series.id)
+                .all()
+            ):
+                existing_episodes.setdefault(
+                    (episode.season, episode.episode),
+                    episode,
                 )
-                .first()
+
+        for episode_data in series_data["episodes"]:
+            episode = existing_episodes.get(
+                (episode_data["season"], episode_data["episode"])
             )
             if episode is None:
                 episode = Episode(
@@ -222,9 +216,11 @@ def set_episode_watched(episode_id, watched):
         if episode is None:
             raise LookupError(f"No se encontró el episodio con id {episode_id}")
         episode.watched = bool(watched)
+        session.flush()
         _update_series_watched(session, episode.series_id)
+        episode_watched = bool(episode.watched)
         session.commit()
-        return bool(episode.watched)
+        return episode_watched
     except Exception:
         session.rollback()
         raise
@@ -235,13 +231,14 @@ def set_episode_watched(episode_id, watched):
 def set_season_watched(series_id, season, watched):
     session = SessionLocal()
     try:
-        episodes = (
+        (
             session.query(Episode)
             .filter_by(series_id=series_id, season=season)
-            .all()
+            .update(
+                {Episode.watched: bool(watched)},
+                synchronize_session=False,
+            )
         )
-        for episode in episodes:
-            episode.watched = bool(watched)
         series_watched = _update_series_watched(session, series_id)
         session.commit()
         return series_watched
@@ -258,32 +255,18 @@ def set_series_watched(series_id, watched):
         series = session.query(Series).filter_by(id=series_id).first()
         if series is None:
             raise LookupError(f"No se encontró la serie con id {series_id}")
-        episodes = (
+        (
             session.query(Episode)
             .filter_by(series_id=series_id)
-            .all()
+            .update(
+                {Episode.watched: bool(watched)},
+                synchronize_session=False,
+            )
         )
-        for episode in episodes:
-            episode.watched = bool(watched)
         series.watched = bool(watched)
+        series_watched = bool(series.watched)
         session.commit()
-        return bool(series.watched)
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-
-
-def toggle_series_favorite(series_id):
-    session = SessionLocal()
-    try:
-        series = session.query(Series).filter_by(id=series_id).first()
-        if series is None:
-            raise LookupError(f"No se encontró la serie con id {series_id}")
-        series.favorite = not bool(series.favorite)
-        session.commit()
-        return bool(series.favorite)
+        return series_watched
     except Exception:
         session.rollback()
         raise
@@ -298,8 +281,9 @@ def set_series_favorite(series_id, favorite):
         if series is None:
             raise LookupError(f"No se encontró la serie con id {series_id}")
         series.favorite = bool(favorite)
+        is_favorite = bool(series.favorite)
         session.commit()
-        return bool(series.favorite)
+        return is_favorite
     except Exception:
         session.rollback()
         raise
@@ -311,13 +295,13 @@ def _update_series_watched(session, series_id):
     series = session.query(Series).filter_by(id=series_id).first()
     if series is None:
         raise LookupError(f"No se encontró la serie con id {series_id}")
-    episodes = (
-        session.query(Episode)
+    episode_count, watched_count = (
+        session.query(
+            func.count(Episode.id),
+            func.coalesce(func.sum(cast(Episode.watched, Integer)), 0),
+        )
         .filter_by(series_id=series_id)
-        .all()
+        .one()
     )
-    series.watched = bool(episodes) and all(
-        bool(episode.watched)
-        for episode in episodes
-    )
+    series.watched = bool(episode_count) and watched_count == episode_count
     return bool(series.watched)

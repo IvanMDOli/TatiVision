@@ -238,9 +238,6 @@ def _preferred_poster_path(
     )
 
 
-def get_movie_credits(tmdb_id):
-    return _tmdb_get(f"movie/{tmdb_id}/credits")
-
 def get_director(credits):
 
     for person in credits.get("crew", []):

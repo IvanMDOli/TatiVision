@@ -4,10 +4,6 @@ from app.scanner.path_utils import is_path_within_root
 import json
 
 
-def save_movie(movie_data):
-    save_movies([movie_data])
-
-
 def save_movies(movie_data_list):
     movie_data_list = list(movie_data_list)
     if not movie_data_list:
@@ -162,22 +158,6 @@ def update_movie_metadata(
     session.close()
 
 
-def search_movies(text):
-
-    session = SessionLocal()
-
-    movies = (
-        session.query(Movie)
-        .filter(
-            Movie.title.contains(text)
-        )
-        .all()
-    )
-
-    session.close()
-
-    return movies
-
 def get_movie_by_id(movie_id):
 
     session = SessionLocal()
@@ -191,30 +171,6 @@ def get_movie_by_id(movie_id):
     session.close()
 
     return movie
-
-def get_movies_by_genre(
-    genre_name
-):
-
-    session = SessionLocal()
-
-    movies = (
-        session.query(Movie)
-        .all()
-    )
-
-    session.close()
-
-    return [
-
-        movie
-
-        for movie in movies
-
-        if movie.genre
-        and genre_name in movie.genre
-
-    ]
 
 def toggle_favorite(movie_id):
 
@@ -233,9 +189,10 @@ def toggle_favorite(movie_id):
             )
 
         movie.favorite = not bool(movie.favorite)
+        is_favorite = bool(movie.favorite)
         session.commit()
 
-        return bool(movie.favorite)
+        return is_favorite
 
     except Exception:
         session.rollback()
@@ -262,9 +219,10 @@ def toggle_watched(movie_id):
             )
 
         movie.watched = not bool(movie.watched)
+        is_watched = bool(movie.watched)
         session.commit()
 
-        return bool(movie.watched)
+        return is_watched
 
     except Exception:
         session.rollback()
@@ -272,79 +230,3 @@ def toggle_watched(movie_id):
 
     finally:
         session.close()
-
-
-def get_favorite_movies():
-
-    session = SessionLocal()
-
-    movies = (
-        session.query(Movie)
-        .filter_by(favorite=True)
-        .all()
-    )
-
-    session.close()
-
-    return movies
-
-def get_all_genres(root_path=None):
-
-    session = SessionLocal()
-
-    try:
-        movies = session.query(Movie).all()
-        if root_path is not None:
-            movies = [
-                movie
-                for movie in movies
-                if is_path_within_root(movie.video_path, root_path)
-            ]
-    finally:
-        session.close()
-
-    genres = set()
-
-    for movie in movies:
-
-        if movie.genre:
-
-            for genre in movie.genre.split(","):
-
-                genres.add(
-                    genre.strip()
-                )
-
-    return sorted(genres)
-
-def get_movies_grouped_by_genre(movies=None):
-
-    if movies is None:
-        session = SessionLocal()
-
-        try:
-            movies = session.query(Movie).all()
-        finally:
-            session.close()
-
-    grouped = {}
-
-    for movie in movies:
-
-        genres = [
-            genre.strip()
-            for genre in (movie.genre or "").split(",")
-            if genre.strip()
-        ] or ["Sin género"]
-
-        for genre in genres:
-
-            if genre not in grouped:
-
-                grouped[genre] = []
-
-            grouped[genre].append(
-                movie
-            )
-
-    return grouped

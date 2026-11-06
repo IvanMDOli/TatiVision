@@ -47,15 +47,6 @@ def load_poster(poster_path, title):
     return QPixmap()
 
 
-def clear_poster_cache():
-    poster_directory = APP_DIR / "cache" / "posters"
-    if poster_directory.exists():
-        for path in poster_directory.iterdir():
-            if path.is_file():
-                path.unlink()
-    invalidate_poster_cache()
-
-
 def invalidate_poster_cache():
     _cached_posters.cache_clear()
     _load_scaled_poster.cache_clear()
