@@ -18,13 +18,6 @@ class SeriesCatalogView(QWidget):
 
         super().__init__()
 
-        self.setObjectName("seriesCatalogView")
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet("""
-            QWidget#seriesCatalogView {
-                background-color: #101417;
-            }
-        """)
         layout = QVBoxLayout(self)
         self.pages = QStackedWidget()
         self.grid = SeriesGrid()

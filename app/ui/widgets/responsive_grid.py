@@ -8,15 +8,36 @@ def layout_fixed_cards(
     cards,
     previous_columns,
     max_columns=6,
+    spread=False,
 ):
     grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
     margins = grid_layout.contentsMargins()
     spacing = grid_layout.horizontalSpacing()
     available_width = viewport_width - margins.left() - margins.right()
+    max_fitting_columns = max(
+        1,
+        (available_width + spacing) // (card_width + spacing),
+    )
     columns = min(
         max_columns,
-        max(1, (available_width + spacing) // (card_width + spacing)),
+        max_fitting_columns,
+        max_columns if spread else max(1, len(cards)),
     )
+
+    if spread and columns > 1:
+        spacing = max(
+            spacing,
+            (available_width - columns * card_width) // (columns - 1),
+        )
+        grid_layout.setHorizontalSpacing(spacing)
+        for column in range(max_columns):
+            grid_layout.setColumnMinimumWidth(
+                column,
+                card_width if column < columns else 0,
+            )
+    else:
+        for column in range(max_columns):
+            grid_layout.setColumnMinimumWidth(column, 0)
 
     if columns == previous_columns and grid_layout.count():
         existing_count = grid_layout.count()

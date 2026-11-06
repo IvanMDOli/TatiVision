@@ -28,7 +28,6 @@ class MovieGrid(QWidget):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QScrollArea.NoFrame)
@@ -62,7 +61,8 @@ class MovieGrid(QWidget):
         self.cards_page = QWidget()
         self.cards_layout = QGridLayout(self.cards_page)
         self.cards_layout.setContentsMargins(13, 8, 13, 8)
-        self.cards_layout.setSpacing(round(13 * MovieCard.CARD_SCALE))
+        self._card_spacing = round(13 * MovieCard.CARD_SCALE)
+        self.cards_layout.setSpacing(self._card_spacing)
         self.pages.addWidget(self.rows_page)
         self.pages.addWidget(self.cards_page)
         content_layout.addWidget(self.pages)
@@ -77,6 +77,7 @@ class MovieGrid(QWidget):
         self._pending_rows = 0
         self._pending_cards = iter(())
         self._grid_columns = 0
+        self._spread_cards = False
         self._card_render_timer = QTimer(self)
         self._card_render_timer.setInterval(8)
         self._card_render_timer.timeout.connect(self._render_next_card_batch)
@@ -103,6 +104,7 @@ class MovieGrid(QWidget):
         self._sort_order = sort_order
         self._selected_genre = selected_genre
         self._group_by_genre = group_by_genre
+        self._spread_cards = not group_by_genre
         self.cards.clear()
         group_by_director = sort_order in {
             "director_asc",
@@ -285,10 +287,12 @@ class MovieGrid(QWidget):
         self.renderFinished.emit()
 
     def _layout_cards(self):
+        self.cards_layout.setHorizontalSpacing(self._card_spacing)
         self._grid_columns = layout_fixed_cards(
             self.cards_layout,
             self.cards_page.width(),
             MovieCard.CARD_WIDTH,
             self.cards,
             self._grid_columns,
+            spread=self._spread_cards,
         )

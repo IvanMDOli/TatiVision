@@ -1,16 +1,18 @@
 from app.models.database import SessionLocal
 from app.models.movie import Movie
 
-session = SessionLocal()
 
-movies = session.query(Movie).all()
+def main():
+    with SessionLocal() as session:
+        movies = session.query(Movie).all()
 
-for movie in movies:
+        for movie in movies:
+            print(
+                movie.id,
+                movie.title,
+                movie.year,
+            )
 
-    print(
-        movie.id,
-        movie.title,
-        movie.year
-    )
 
-session.close()
+if __name__ == "__main__":
+    main()

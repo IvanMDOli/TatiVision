@@ -1,3 +1,5 @@
 from app.tasks.scan_library import run
 
-run()
+
+if __name__ == "__main__":
+    run()
